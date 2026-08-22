@@ -1,2 +1,11 @@
-.ipynb_checkpoints
+.vscode
 .venv
+__pycache__
+.idea
+.coverage
+.env
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.ipynb_checkpoints
+reports/
