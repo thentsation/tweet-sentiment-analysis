@@ -1,6 +1,7 @@
 import pandas as pd
 
 from classifier import predict, train_and_evaluate
+from preprocessing import preprocess_dataframe
 from sentiment import add_sentiment_columns
 
 
@@ -13,7 +14,7 @@ def build_training_data() -> tuple[pd.Series, pd.Series]:
         ]
         * 20
     )
-    df = add_sentiment_columns(pd.DataFrame({'clean_text': texts}))
+    df = add_sentiment_columns(preprocess_dataframe(pd.DataFrame({'text': texts})))
     return df['clean_text'], df['sentiment_label']
 
 
@@ -36,7 +37,9 @@ def test_train_and_evaluate_is_deterministic() -> None:
 
 
 def test_train_and_evaluate_evaluation_fields(sample_texts: pd.Series) -> None:
-    df = add_sentiment_columns(pd.DataFrame({'clean_text': sample_texts * 4}))
+    df = add_sentiment_columns(
+        preprocess_dataframe(pd.DataFrame({'text': sample_texts * 4}))
+    )
 
     result = train_and_evaluate(
         df['clean_text'], df['sentiment_label'], max_features=100

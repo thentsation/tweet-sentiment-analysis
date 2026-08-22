@@ -4,11 +4,13 @@ import pandas as pd
 import pytest
 
 from preprocessing import ensure_nltk_data
+from sentiment import ensure_vader_lexicon
 
 
 @pytest.fixture(scope='session', autouse=True)
 def _nltk_data() -> None:
     ensure_nltk_data()
+    ensure_vader_lexicon()
 
 
 POSITIVE_TEXTS = [

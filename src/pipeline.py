@@ -7,7 +7,7 @@ import pandas as pd
 from classifier import ClassifierEvaluation, TrainResult, train_and_evaluate
 from config import PipelineConfig
 from preprocessing import preprocess_dataframe
-from sentiment import add_sentiment_columns
+from sentiment import add_sentiment_columns, label_agreement
 from topics import top_words_per_topic, train_lda
 from visualization import plot_sentiment_distribution, plot_wordclouds
 
@@ -53,6 +53,7 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
         test_size=config.test_size,
         random_state=config.random_state,
     )
+    agreement = label_agreement(df['sentiment_label'], df['vader_label'])
 
     figures_dir = config.output_dir / 'figures'
     plot_sentiment_distribution(
@@ -60,7 +61,7 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
     )
     plot_wordclouds(lda, lda_vectorizer, figures_dir / 'wordclouds')
 
-    write_metrics(config, train_result.evaluation, topics, len(df))
+    write_metrics(config, train_result.evaluation, topics, len(df), agreement)
     return PipelineResult(
         tweets_analyzed=len(df),
         topics=topics,
@@ -74,6 +75,7 @@ def write_metrics(
     evaluation: ClassifierEvaluation,
     topics: list[list[str]],
     tweets_analyzed: int,
+    agreement: dict[str, float | dict[str, float]],
 ) -> None:
     metrics = {
         'tweets_analyzed': tweets_analyzed,
@@ -84,6 +86,7 @@ def write_metrics(
         'confusion_matrix': evaluation.confusion_matrix,
         'labels': evaluation.labels,
         'classification_report': evaluation.classification_report,
+        'label_agreement': agreement,
         'topics': [
             {'topic': index + 1, 'top_words': words}
             for index, words in enumerate(topics)

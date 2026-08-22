@@ -60,6 +60,11 @@ def test_run_pipeline_produces_reports(config: PipelineConfig) -> None:
     assert len(metrics['topics']) == 2
     assert metrics['accuracy'] == result.evaluation.accuracy
 
+    agreement = metrics['label_agreement']
+    assert 0.0 <= agreement['overall'] <= 1.0
+    assert set(agreement['by_label']) == {'positive', 'negative', 'neutral'}
+    assert all(0.0 <= score <= 1.0 for score in agreement['by_label'].values())
+
     assert (config.output_dir / 'figures' / 'sentiment_distribution.png').exists()
     assert (
         config.output_dir / 'figures' / 'wordclouds' / 'wordcloud_topic_1.png'
