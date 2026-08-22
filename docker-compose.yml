@@ -1,0 +1,8 @@
+services:
+  pipeline:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    volumes:
+      - ./reports:/app/reports
+    command: ['--sample', '2000']
