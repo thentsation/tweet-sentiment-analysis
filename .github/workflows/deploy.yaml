@@ -1,0 +1,115 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["Docker CI/CD"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  ROLE_ARN: arn:aws:iam::533267281147:role/github-actions-deploy
+  ECR_REPOSITORY: tweet-sentiment-analysis
+  GHCR_IMAGE: ghcr.io/ntsation/tweet-sentiment-analysis
+  CONTAINER_NAME: tweet-sentiment-analysis-run
+
+jobs:
+  deploy:
+    name: Rodar na EC2 (job em lote)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login no ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Login no GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Espelhar imagem do GHCR para o ECR
+        run: |
+          ECR_URI="${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}"
+          IMAGE_TAG="${GITHUB_SHA::12}"
+          # Repositório ECR é IMMUTABLE: só publica a tag pelo SHA, nunca uma
+          # tag reaproveitável como "latest".
+          docker buildx imagetools create \
+            --tag "$ECR_URI:$IMAGE_TAG" \
+            "${{ env.GHCR_IMAGE }}:latest"
+          echo "ECR_URI=$ECR_URI" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=$IMAGE_TAG" >> "$GITHUB_ENV"
+
+      - name: Achar a instância EC2
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=free-tier-ec2" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].InstanceId' --output text)
+          [ "$INSTANCE_ID" != "None" ] || { echo "Instância não encontrada ou não está running"; exit 1; }
+          echo "INSTANCE_ID=$INSTANCE_ID" >> "$GITHUB_ENV"
+
+      - name: Rodar o pipeline via SSM (job em lote, sem deixar container rodando)
+        run: |
+          cat > /tmp/ssm-params.json <<JSON
+          {
+            "commands": [
+              "set -e",
+              "aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin ${ECR_URI%/*}",
+              "docker pull $ECR_URI:$IMAGE_TAG",
+              "docker rm -f $CONTAINER_NAME 2>/dev/null || true",
+              "docker run --name $CONTAINER_NAME --rm $ECR_URI:$IMAGE_TAG --sample 500",
+              "docker image prune -f"
+            ]
+          }
+          JSON
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Smoke run $ECR_REPOSITORY ${GITHUB_SHA::12}" \
+            --parameters file:///tmp/ssm-params.json \
+            --query 'Command.CommandId' --output text)
+          echo "COMMAND_ID=$COMMAND_ID" >> "$GITHUB_ENV"
+          echo "Aguardando comando $COMMAND_ID na instância $INSTANCE_ID"
+
+          for i in $(seq 1 60); do
+            STATUS=$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --query 'Status' --output text 2>/dev/null || echo "Pending")
+            echo "Status: $STATUS"
+            case "$STATUS" in
+              Success) break ;;
+              Failed|Cancelled|TimedOut)
+                aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+                  --query '{stdout:StandardOutputContent,stderr:StandardErrorContent}' --output json
+                exit 1
+                ;;
+            esac
+            sleep 5
+            if [ "$i" = "60" ]; then
+              echo "Timeout esperando o comando terminar"
+              exit 1
+            fi
+          done
+
+      - name: Validar saída do pipeline (smoke test)
+        run: |
+          OUTPUT=$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+            --query 'StandardOutputContent' --output text)
+          echo "$OUTPUT"
+          echo "$OUTPUT" | grep -q "Relatórios salvos em" \
+            && echo "OK: pipeline rodou e gerou relatório na EC2" \
+            || { echo "FALHOU: saída não contém a confirmação esperada"; exit 1; }
