@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.1.0 (2026-08-22)
+
+### Features
+
+- **ci**: Notify portfolio to rebuild on push to main
+  ([`7810346`](https://github.com/ntsation/tweet-sentiment-analysis/commit/78103464b91d9d699d93ecb13890a0cd95e5f69d))
+
+
 ## v1.0.2 (2026-08-22)
 
 ### Bug Fixes
