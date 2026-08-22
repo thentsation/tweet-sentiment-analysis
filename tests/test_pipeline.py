@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from config import PipelineConfig
-from pipeline import load_data, run_pipeline
+from pipeline import build_timeline, load_data, run_pipeline, timeline_summary
 
 
 @pytest.fixture
@@ -72,12 +72,62 @@ def test_run_pipeline_produces_reports(config: PipelineConfig) -> None:
     assert f1_scores == sorted(f1_scores, reverse=True)
 
     assert (config.output_dir / 'figures' / 'sentiment_distribution.png').exists()
+    assert (config.output_dir / 'figures' / 'sentiment_timeline.png').exists()
     assert (
         config.output_dir / 'figures' / 'wordclouds' / 'wordcloud_topic_1.png'
     ).exists()
     assert (
         config.output_dir / 'figures' / 'wordclouds' / 'wordcloud_topic_2.png'
     ).exists()
+
+    timeline = metrics['sentiment_timeline']
+    assert timeline is not None
+    assert timeline['start'] == '2020-07-25'
+    assert timeline['days'] == 5
+
+
+def test_build_timeline_groups_by_day(config: PipelineConfig) -> None:
+    from preprocessing import preprocess_dataframe
+    from sentiment import add_sentiment_columns
+
+    raw = load_data(config)
+    processed = add_sentiment_columns(preprocess_dataframe(raw, 'text'))
+
+    timeline = build_timeline(processed, 'date')
+
+    assert timeline is not None
+    assert list(timeline.columns) == ['date', 'textblob', 'vader']
+    assert len(timeline) == 5
+    assert timeline['date'].is_monotonic_increasing
+    assert timeline['textblob'].between(-1, 1).all()
+
+
+def test_build_timeline_returns_none_without_date_column() -> None:
+    from preprocessing import preprocess_dataframe
+    from sentiment import add_sentiment_columns
+
+    df = pd.DataFrame({'text': ['great day', 'bad day'] * 3})
+    processed = add_sentiment_columns(preprocess_dataframe(df, 'text'))
+
+    assert build_timeline(processed, 'date') is None
+
+
+def test_timeline_summary_reports_period() -> None:
+    timeline = pd.DataFrame(
+        {
+            'date': pd.to_datetime(['2020-07-25', '2020-07-26', '2020-07-27']),
+            'textblob': [0.2, -0.3, 0.1],
+            'vader': [0.1, 0.0, 0.4],
+        }
+    )
+
+    summary = timeline_summary(timeline)
+
+    assert summary['start'] == '2020-07-25'
+    assert summary['end'] == '2020-07-27'
+    assert summary['days'] == 3
+    assert summary['most_negative_day'] == '2020-07-26'
+    assert summary['most_positive_day'] == '2020-07-27'
 
 
 def test_run_pipeline_is_deterministic(config: PipelineConfig) -> None:

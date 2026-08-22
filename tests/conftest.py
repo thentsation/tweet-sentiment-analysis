@@ -45,8 +45,10 @@ def sample_texts() -> pd.Series:
 
 @pytest.fixture
 def tiny_csv(tmp_path: Path) -> Path:
+    dates = pd.date_range('2020-07-25', periods=5).strftime('%Y-%m-%d %H:%M:%S')
+    texts = POSITIVE_TEXTS * 6 + NEGATIVE_TEXTS * 6 + NEUTRAL_TEXTS * 6
     rows = pd.DataFrame(
-        {'text': POSITIVE_TEXTS * 6 + NEGATIVE_TEXTS * 6 + NEUTRAL_TEXTS * 6}
+        {'text': texts, 'date': [dates[i % len(dates)] for i in range(len(texts))]}
     )
     path = tmp_path / 'tweets.csv'
     rows.to_csv(path, index=False)

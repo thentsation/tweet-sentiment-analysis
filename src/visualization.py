@@ -23,6 +23,23 @@ def plot_sentiment_distribution(sentiments: pd.Series, output_path: Path) -> Non
     plt.close()
 
 
+def plot_sentiment_timeline(
+    timeline: pd.DataFrame,
+    output_path: Path,
+) -> None:
+    plt.figure(figsize=(12, 5))
+    plt.plot(timeline['date'], timeline['textblob'], label='TextBlob', color='blue')
+    plt.plot(timeline['date'], timeline['vader'], label='VADER', color='orange')
+    plt.title('Daily Average Sentiment Over Time')
+    plt.xlabel('Date')
+    plt.ylabel('Average Polarity')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+
 def plot_wordclouds(
     lda: LatentDirichletAllocation,
     vectorizer: CountVectorizer,

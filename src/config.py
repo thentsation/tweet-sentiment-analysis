@@ -7,6 +7,7 @@ class PipelineConfig:
     input_path: Path = Path('data/covid19_tweets.csv')
     output_dir: Path = Path('reports')
     text_column: str = 'text'
+    date_column: str = 'date'
     num_topics: int = 5
     num_words: int = 10
     max_features: int = 3000

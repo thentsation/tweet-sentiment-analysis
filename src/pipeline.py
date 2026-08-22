@@ -15,7 +15,11 @@ from config import PipelineConfig
 from preprocessing import preprocess_dataframe
 from sentiment import add_sentiment_columns, label_agreement
 from topics import top_words_per_topic, train_lda
-from visualization import plot_sentiment_distribution, plot_wordclouds
+from visualization import (
+    plot_sentiment_distribution,
+    plot_sentiment_timeline,
+    plot_wordclouds,
+)
 
 
 @dataclass(frozen=True)
@@ -37,6 +41,36 @@ def load_data(config: PipelineConfig) -> pd.DataFrame:
     if config.sample_size is not None and config.sample_size < len(df):
         df = df.sample(n=config.sample_size, random_state=config.random_state)
     return df.reset_index(drop=True)
+
+
+def build_timeline(df: pd.DataFrame, date_column: str) -> pd.DataFrame | None:
+    if date_column not in df.columns:
+        return None
+    dates = pd.to_datetime(df[date_column], errors='coerce')
+    if dates.isna().all():
+        return None
+    timeline = pd.DataFrame(
+        {
+            'date': dates.dt.normalize(),
+            'textblob': df['sentiment'],
+            'vader': df['vader_compound'],
+        }
+    ).dropna(subset=['date'])
+    if timeline.empty:
+        return None
+    return timeline.groupby('date', as_index=False).mean(numeric_only=True)
+
+
+def timeline_summary(timeline: pd.DataFrame) -> dict[str, str | int]:
+    textblob_row = timeline.loc[timeline['textblob'].idxmin()]
+    vader_row = timeline.loc[timeline['vader'].idxmax()]
+    return {
+        'start': str(timeline['date'].min().date()),
+        'end': str(timeline['date'].max().date()),
+        'days': int(timeline['date'].nunique()),
+        'most_negative_day': str(textblob_row['date'].date()),
+        'most_positive_day': str(vader_row['date'].date()),
+    }
 
 
 def run_pipeline(config: PipelineConfig) -> PipelineResult:
@@ -73,10 +107,19 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
     plot_sentiment_distribution(
         df['sentiment'], figures_dir / 'sentiment_distribution.png'
     )
+    timeline = build_timeline(df, config.date_column)
+    if timeline is not None:
+        plot_sentiment_timeline(timeline, figures_dir / 'sentiment_timeline.png')
     plot_wordclouds(lda, lda_vectorizer, figures_dir / 'wordclouds')
 
     write_metrics(
-        config, train_result.evaluation, topics, len(df), agreement, benchmark
+        config,
+        train_result.evaluation,
+        topics,
+        len(df),
+        agreement,
+        benchmark,
+        timeline_summary(timeline) if timeline is not None else None,
     )
     return PipelineResult(
         tweets_analyzed=len(df),
@@ -94,6 +137,7 @@ def write_metrics(
     tweets_analyzed: int,
     agreement: dict[str, float | dict[str, float]],
     benchmark: list[ModelScore],
+    timeline: dict[str, str | int] | None,
 ) -> None:
     metrics = {
         'tweets_analyzed': tweets_analyzed,
@@ -105,6 +149,7 @@ def write_metrics(
         'labels': evaluation.labels,
         'classification_report': evaluation.classification_report,
         'label_agreement': agreement,
+        'sentiment_timeline': timeline,
         'model_benchmark': [
             {
                 'model': score.name,
