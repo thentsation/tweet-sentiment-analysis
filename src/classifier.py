@@ -1,10 +1,19 @@
 from dataclasses import dataclass
 
 import pandas as pd
-from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.naive_bayes import MultinomialNB
+
+
+def build_vectorizer(max_features: int) -> TfidfVectorizer:
+    return TfidfVectorizer(
+        max_df=0.85,
+        max_features=max_features,
+        ngram_range=(1, 2),
+        sublinear_tf=True,
+    )
 
 
 @dataclass(frozen=True)
@@ -18,7 +27,7 @@ class ClassifierEvaluation:
 @dataclass(frozen=True)
 class TrainResult:
     classifier: MultinomialNB
-    vectorizer: CountVectorizer
+    vectorizer: TfidfVectorizer
     evaluation: ClassifierEvaluation
 
 
@@ -36,7 +45,7 @@ def train_and_evaluate(
         test_size=test_size,
         random_state=random_state,
     )
-    vectorizer = CountVectorizer(max_df=0.85, max_features=max_features)
+    vectorizer = build_vectorizer(max_features)
     train_matrix = vectorizer.fit_transform(X_train)
     classifier = MultinomialNB()
     classifier.fit(train_matrix, y_train)
@@ -64,7 +73,7 @@ def train_and_evaluate(
 
 
 def predict(
-    classifier: MultinomialNB, vectorizer: CountVectorizer, texts: list[str]
+    classifier: MultinomialNB, vectorizer: TfidfVectorizer, texts: list[str]
 ) -> list[str]:
     matrix = vectorizer.transform(texts)
     return [str(label) for label in classifier.predict(matrix)]

@@ -1,8 +1,19 @@
 import pandas as pd
 
-from classifier import predict, train_and_evaluate
+from classifier import build_vectorizer, predict, train_and_evaluate
 from preprocessing import preprocess_dataframe
 from sentiment import add_sentiment_columns
+
+
+def test_build_vectorizer_extracts_unigrams_and_bigrams() -> None:
+    vectorizer = build_vectorizer(max_features=100)
+    matrix = vectorizer.fit_transform(['not good at all'])
+
+    features = set(vectorizer.get_feature_names_out())
+
+    assert 'not good' in features
+    assert 'good' in features
+    assert matrix.shape[0] == 1
 
 
 def build_training_data() -> tuple[pd.Series, pd.Series]:
