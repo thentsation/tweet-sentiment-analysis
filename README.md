@@ -4,15 +4,16 @@
 
 [![Python CI](https://github.com/ntsation/tweet-sentiment-analysis/actions/workflows/pipeline_python.yaml/badge.svg)](https://github.com/ntsation/tweet-sentiment-analysis/actions/workflows/pipeline_python.yaml)
 
-NLP pipeline combining **TextBlob sentiment analysis**, **LDA topic modeling** and a **Naive Bayes classifier** over ~179k COVID-19 tweets.
+NLP pipeline combining **dual sentiment annotation** (TextBlob + VADER), **LDA topic modeling with coherence-based k selection** and a **4-model classifier benchmark** over ~179k COVID-19 tweets.
 
 > Full article in [Portuguese](README.pt-br.md).
 
 ## TL;DR
 
 - **Dataset**: 179,108 tweets from July/August 2020 (`data/covid19_tweets.csv`)
-- **Topics**: LDA surfaces masks, vaccines, daily case reports and lockdown discussions
-- **Classifier**: MultinomialNB reaching **84.5% accuracy** on the held-out test set
+- **Sentiment**: dual annotation — TextBlob (polarity) + VADER (social media) with agreement analysis
+- **Topics**: LDA with automatic `k` selection via UMass coherence
+- **Classifier**: benchmark of 4 models (MultinomialNB, ComplementNB, LogReg, LinearSVC) over TF-IDF + bigrams — **LinearSVC wins with 82.0% accuracy / 0.78 macro-F1**
 - **Engineering**: fully typed (strict mypy), 99% test coverage, CI with ruff + pytest matrix + mypy + pip-audit + pipeline smoke test
 
 ## Pipeline
@@ -20,38 +21,43 @@ NLP pipeline combining **TextBlob sentiment analysis**, **LDA topic modeling** a
 ```mermaid
 flowchart LR
     A["CSV<br/>covid19_tweets.csv"] --> B["load_data<br/>deterministic sampling"]
-    B --> C["preprocessing<br/>lowercase + NLTK stopwords"]
-    C --> D["sentiment<br/>TextBlob polarity"]
-    C --> E["topics<br/>LDA (scikit-learn)"]
-    D --> F["classifier<br/>MultinomialNB"]
+    B --> C["preprocessing<br/>tweet cleaning + stopwords"]
+    C --> D["sentiment<br/>TextBlob + VADER"]
+    C --> E["topics<br/>LDA + coherence"]
+    D --> F["classifier<br/>4-model benchmark"]
     D --> G["reports/<br/>figures + metrics.json"]
     E --> G
     F --> G
 ```
 
-Labels are derived from TextBlob polarity (`>0` positive, `<0` negative, `0` neutral) and used as training targets for the classifier, mirroring the original notebook methodology.
+Labels are derived from TextBlob polarity (`>0` positive, `<0` negative, `0` neutral) and cross-checked against VADER — the agreement between both annotators lands at ~53%, showing how noisy lexical labels are.
 
 ## Results
+
+### Model benchmark
+
+On a 20k-tweet sample (TF-IDF + bigrams, 80/20 split, TextBlob labels):
+
+| model | accuracy | macro-F1 |
+| --- | --- | --- |
+| LinearSVC | **0.820** | **0.784** |
+| LogisticRegression | 0.803 | 0.752 |
+| ComplementNB | 0.729 | 0.701 |
+| MultinomialNB | 0.731 | 0.651 |
 
 ### LDA topics
 
 | Topic | Top words |
 | --- | --- |
-| 1 | covid19, people, mask, like, amp, know, good, realdonaldtrump, masks, year |
-| 2 | covid19, pandemic, vaccine, health, amp, coronavirus, world, trump, says, virus |
-| 3 | covid19, covid, 19, coronavirus, 2020, spread, news, august, latest, daily |
-| 4 | cases, covid19, new, deaths, total, india, positive, coronavirus, reported, 24 |
-| 5 | covid19, amp, day, home, safe, lockdown, week, stay, work, 000 |
+| 1 | covid19, trump, need, positive, people, amp, mask, masks, face, ve |
+| 2 | covid19, covid, 19, amp, pandemic, people, new, testing, health, read |
+| 3 | covid19, cases, new, coronavirus, deaths, covid, 2020, india, 19, total |
+| 4 | covid19, pandemic, amp, people, health, coronavirus, work, home, school, news |
+| 5 | covid19, vaccine, safe, coronavirus, amp, mask, stay, social, americans, watch |
 
-### Naive Bayes classifier
+### Naive Bayes baseline (MultinomialNB)
 
-Accuracy of **0.845** over 35,822 test tweets:
-
-| class | precision | recall | f1-score | support |
-| --- | --- | --- | --- | --- |
-| negative | 0.75 | 0.66 | 0.70 | 5,724 |
-| neutral | 0.87 | 0.90 | 0.88 | 16,180 |
-| positive | 0.85 | 0.86 | 0.86 | 13,918 |
+Accuracy of **0.731** / macro-F1 **0.651** on the 20k-tweet sample — the weakest of the benchmark, motivating the model comparison above.
 
 ## Usage
 
@@ -69,9 +75,10 @@ Or via CLI:
 
 ```bash
 python src/main.py --sample 5000 --num-topics 5 --output reports
+python src/main.py --sample 20000 --tune-topics    # automatic k selection
 ```
 
-Outputs land in `reports/`: `metrics.json`, `figures/sentiment_distribution.png` and per-topic word clouds.
+Outputs land in `reports/`: `metrics.json` (topics, model benchmark, annotator agreement, timeline summary, coherence scores), `figures/sentiment_distribution.png`, `figures/sentiment_timeline.png` and per-topic word clouds.
 
 ### Docker
 
