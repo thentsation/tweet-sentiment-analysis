@@ -7,13 +7,15 @@ from sentiment import add_sentiment_columns
 
 def test_build_vectorizer_extracts_unigrams_and_bigrams() -> None:
     vectorizer = build_vectorizer(max_features=100)
-    matrix = vectorizer.fit_transform(['not good at all'])
+    matrix = vectorizer.fit_transform(
+        ['not good at all', 'stay home today', 'not bad result']
+    )
 
     features = set(vectorizer.get_feature_names_out())
 
     assert 'not good' in features
     assert 'good' in features
-    assert matrix.shape[0] == 1
+    assert matrix.shape[0] == 3
 
 
 def build_training_data() -> tuple[pd.Series, pd.Series]:
