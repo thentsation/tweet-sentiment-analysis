@@ -1,6 +1,11 @@
 import pandas as pd
 
-from classifier import build_vectorizer, predict, train_and_evaluate
+from classifier import (
+    benchmark_models,
+    build_vectorizer,
+    predict,
+    train_and_evaluate,
+)
 from preprocessing import preprocess_dataframe
 from sentiment import add_sentiment_columns
 
@@ -78,3 +83,44 @@ def test_predict_returns_labels_for_new_texts() -> None:
         result.classifier, result.vectorizer, ['amazing love day', 'hate terrible day']
     )
     assert all(label in {'positive', 'negative', 'neutral'} for label in predictions)
+
+
+def test_benchmark_models_covers_all_models() -> None:
+    texts, labels = build_training_data()
+
+    scores = benchmark_models(texts, labels, max_features=100)
+
+    assert sorted(score.name for score in scores) == [
+        'ComplementNB',
+        'LinearSVC',
+        'LogisticRegression',
+        'MultinomialNB',
+    ]
+    assert all(0.0 <= score.accuracy <= 1.0 for score in scores)
+    assert all(0.0 <= score.macro_f1 <= 1.0 for score in scores)
+
+
+def test_benchmark_models_learns_separable_classes() -> None:
+    texts, labels = build_training_data()
+
+    scores = benchmark_models(texts, labels, max_features=100)
+
+    best = scores[0]
+    assert best.macro_f1 >= 0.8
+    assert best.name in {
+        'MultinomialNB',
+        'ComplementNB',
+        'LogisticRegression',
+        'LinearSVC',
+    }
+
+
+def test_benchmark_models_is_deterministic() -> None:
+    texts, labels = build_training_data()
+
+    first = benchmark_models(texts, labels, max_features=100)
+    second = benchmark_models(texts, labels, max_features=100)
+
+    assert [(s.name, s.accuracy) for s in first] == [
+        (s.name, s.accuracy) for s in second
+    ]

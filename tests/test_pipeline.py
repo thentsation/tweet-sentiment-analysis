@@ -65,6 +65,12 @@ def test_run_pipeline_produces_reports(config: PipelineConfig) -> None:
     assert set(agreement['by_label']) == {'positive', 'negative', 'neutral'}
     assert all(0.0 <= score <= 1.0 for score in agreement['by_label'].values())
 
+    benchmark = metrics['model_benchmark']
+    assert len(benchmark) == 4
+    assert {'model', 'accuracy', 'macro_f1'} == set(benchmark[0].keys())
+    f1_scores = [entry['macro_f1'] for entry in benchmark]
+    assert f1_scores == sorted(f1_scores, reverse=True)
+
     assert (config.output_dir / 'figures' / 'sentiment_distribution.png').exists()
     assert (
         config.output_dir / 'figures' / 'wordclouds' / 'wordcloud_topic_1.png'
