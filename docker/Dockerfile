@@ -22,7 +22,9 @@ ENV NLTK_DATA=/usr/local/share/nltk_data
 
 RUN python -c "import nltk; nltk.download('stopwords', download_dir='/usr/local/share/nltk_data'); nltk.download('vader_lexicon', download_dir='/usr/local/share/nltk_data')"
 
-RUN useradd --create-home appuser
+RUN useradd --create-home appuser \
+    && mkdir -p reports/figures \
+    && chown -R appuser:appuser reports
 
 USER appuser
 
