@@ -64,7 +64,7 @@ jobs:
           pip install pytest==9.1.1 pytest-cov==7.1.0
 
       - name: Download NLTK stopwords
-        run: python -c "import nltk; nltk.download('stopwords')"
+        run: python -c "import nltk; nltk.download('stopwords'); nltk.download('vader_lexicon')"
 
       - name: Run tests
         run: pytest --cov=src --cov-report=term-missing --cov-fail-under=95
@@ -110,7 +110,7 @@ jobs:
           pip install -r config/requirements.txt
 
       - name: Download NLTK stopwords
-        run: python -c "import nltk; nltk.download('stopwords')"
+        run: python -c "import nltk; nltk.download('stopwords'); nltk.download('vader_lexicon')"
 
       - name: Run pipeline on data sample
         run: python src/main.py --sample 500 --num-topics 3
