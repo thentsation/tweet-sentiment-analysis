@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v1.0.2 (2026-08-22)
+
+### Bug Fixes
+
+- Atualiza skip-dirs do trivy para python 3.14
+  ([`379a59d`](https://github.com/ntsation/tweet-sentiment-analysis/commit/379a59ddf204defeb5292128a3c71f6d8ee86c43))
+
+- Remove ensurepip da imagem para eliminar wheel vulneravel do pip
+  ([`13c9e06`](https://github.com/ntsation/tweet-sentiment-analysis/commit/13c9e06656d2ccd88bf4ebe27d236b8546ccf9d6))
+
+
 ## v1.0.1 (2026-08-22)
 
 ### Bug Fixes
