@@ -31,6 +31,11 @@ def parse_args() -> argparse.Namespace:
         '--num-words', type=int, default=10, help='palavras por tópico no relatório'
     )
     parser.add_argument(
+        '--tune-topics',
+        action='store_true',
+        help='busca coerência para escolher num_topics automaticamente',
+    )
+    parser.add_argument(
         '--seed', type=int, default=42, help='semente aleatória (reprodutibilidade)'
     )
     return parser.parse_args()
@@ -44,6 +49,7 @@ def build_config(args: argparse.Namespace) -> PipelineConfig:
         sample_size=args.sample,
         num_topics=args.num_topics,
         num_words=args.num_words,
+        tune_topics=args.tune_topics,
         random_state=args.seed,
     )
 

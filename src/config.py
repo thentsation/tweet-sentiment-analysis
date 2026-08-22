@@ -10,6 +10,7 @@ class PipelineConfig:
     date_column: str = 'date'
     num_topics: int = 5
     num_words: int = 10
+    tune_topics: bool = False
     max_features: int = 3000
     test_size: float = 0.2
     random_state: int = 42

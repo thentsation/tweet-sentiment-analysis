@@ -14,7 +14,7 @@ from classifier import (
 from config import PipelineConfig
 from preprocessing import preprocess_dataframe
 from sentiment import add_sentiment_columns, label_agreement
-from topics import top_words_per_topic, train_lda
+from topics import top_words_per_topic, train_lda, tune_num_topics
 from visualization import (
     plot_sentiment_distribution,
     plot_sentiment_timeline,
@@ -79,6 +79,15 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
     df = df[df['clean_text'].str.strip().str.len() > 0].reset_index(drop=True)
     df = add_sentiment_columns(df)
 
+    topic_tuning: dict[str, float | int | dict[str, float]] | None = None
+    if config.tune_topics:
+        topic_tuning = tune_num_topics(
+            df['clean_text'],
+            max_features=config.max_features,
+            random_state=config.random_state,
+            num_words=config.num_words,
+        )
+
     lda, lda_vectorizer = train_lda(
         df['clean_text'],
         num_topics=config.num_topics,
@@ -120,6 +129,7 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
         agreement,
         benchmark,
         timeline_summary(timeline) if timeline is not None else None,
+        topic_tuning,
     )
     return PipelineResult(
         tweets_analyzed=len(df),
@@ -138,6 +148,7 @@ def write_metrics(
     agreement: dict[str, float | dict[str, float]],
     benchmark: list[ModelScore],
     timeline: dict[str, str | int] | None,
+    topic_tuning: dict[str, float | int | dict[str, float]] | None,
 ) -> None:
     metrics = {
         'tweets_analyzed': tweets_analyzed,
@@ -150,6 +161,7 @@ def write_metrics(
         'classification_report': evaluation.classification_report,
         'label_agreement': agreement,
         'sentiment_timeline': timeline,
+        'topic_coherence': topic_tuning,
         'model_benchmark': [
             {
                 'model': score.name,
