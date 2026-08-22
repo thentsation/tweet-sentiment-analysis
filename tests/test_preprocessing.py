@@ -1,6 +1,7 @@
 import pandas as pd
 
 from preprocessing import (
+    clean_tweet,
     ensure_nltk_data,
     load_stopwords,
     preprocess_dataframe,
@@ -8,10 +9,36 @@ from preprocessing import (
 )
 
 
+def test_clean_tweet_removes_urls() -> None:
+    assert clean_tweet('check this https://t.co/QZvYbrOgb0 now') == 'check this now'
+
+
+def test_clean_tweet_removes_mentions() -> None:
+    assert clean_tweet('hey @yankees @mlb great game') == 'hey great game'
+
+
+def test_clean_tweet_removes_retweet_prefix() -> None:
+    assert clean_tweet('RT @user: stay safe people') == ': stay safe people'
+
+
+def test_clean_tweet_unwraps_hashtags() -> None:
+    assert clean_tweet('the #COVID19 news #StayHome') == 'the COVID19 news StayHome'
+
+
+def test_clean_tweet_collapses_whitespace() -> None:
+    assert clean_tweet('too   many \n spaces') == 'too many spaces'
+
+
 def test_preprocess_text_lowercases_and_removes_stopwords() -> None:
     result = preprocess_text('The Quick Brown Fox jumps over the lazy dog')
 
     assert result == 'quick brown fox jumps lazy dog'
+
+
+def test_preprocess_text_strips_urls_and_mentions() -> None:
+    result = preprocess_text('Check https://t.co/abc @user the vaccine news')
+
+    assert result == 'check vaccine news'
 
 
 def test_preprocess_text_removes_all_stopwords_to_empty() -> None:
@@ -35,12 +62,13 @@ def test_ensure_nltk_data_is_idempotent() -> None:
     assert load_stopwords()
 
 
-def test_preprocess_dataframe_adds_clean_text_column() -> None:
+def test_preprocess_dataframe_adds_tweet_and_clean_columns() -> None:
     df = pd.DataFrame({'text': ['The vaccine is great', 'I hate the virus']})
 
     result = preprocess_dataframe(df, 'text')
 
-    assert list(result.columns) == ['text', 'clean_text']
+    assert list(result.columns) == ['text', 'tweet_text', 'clean_text']
+    assert result.loc[0, 'tweet_text'] == 'The vaccine is great'
     assert result.loc[0, 'clean_text'] == 'vaccine great'
     assert result.loc[1, 'clean_text'] == 'hate virus'
 
