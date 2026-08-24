@@ -1,0 +1,124 @@
+name: Deploy Oracle
+
+on:
+  workflow_run:
+    workflows: ["Docker CI/CD"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sample:
+        description: "Tamanho da amostra (--sample)"
+        type: string
+        default: "500"
+        required: false
+
+env:
+  OCI_REGION: sa-saopaulo-1
+  OCI_NAMESPACE: grun5vjqis7z
+  OCI_COMPARTMENT_ID: ${{ secrets.OCI_COMPARTMENT_ID }}
+  OCIR_REPOSITORY: tweet-sentiment-analysis
+  GHCR_IMAGE: ghcr.io/ntsation/tweet-sentiment-analysis
+  CONTAINER_NAME: tweet-sentiment-analysis-run
+
+jobs:
+  deploy:
+    name: Rodar na instância Oracle (job em lote)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Instalar OCI CLI
+        run: pip install --quiet oci-cli
+
+      - name: Configurar OCI CLI
+        run: |
+          mkdir -p ~/.oci
+          printf '%s' "${{ secrets.OCI_CI_PRIVATE_KEY }}" > ~/.oci/key.pem
+          chmod 600 ~/.oci/key.pem
+          cat > ~/.oci/config <<EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_CI_USER_OCID }}
+          fingerprint=${{ secrets.OCI_CI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_TENANCY_OCID }}
+          region=$OCI_REGION
+          key_file=~/.oci/key.pem
+          EOF
+          chmod 600 ~/.oci/config
+          echo "OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING=True" >> "$GITHUB_ENV"
+
+      - name: Login no OCIR
+        run: echo "${{ secrets.OCI_AUTH_TOKEN }}" | docker login gru.ocir.io -u "$OCI_NAMESPACE/ci-deploy" --password-stdin
+
+      - name: Login no GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Espelhar imagem do GHCR para o OCIR
+        run: |
+          OCIR_URI="gru.ocir.io/$OCI_NAMESPACE/$OCIR_REPOSITORY"
+          IMAGE_TAG="${GITHUB_SHA::12}"
+          docker buildx imagetools create \
+            --tag "$OCIR_URI:$IMAGE_TAG" \
+            "$GHCR_IMAGE:latest"
+          echo "OCIR_URI=$OCIR_URI" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=$IMAGE_TAG" >> "$GITHUB_ENV"
+
+      - name: Achar a instância Oracle
+        run: |
+          INSTANCE_ID=$(oci compute instance list \
+            --compartment-id "$OCI_COMPARTMENT_ID" \
+            --display-name "instance-20260824-0846" \
+            --lifecycle-state RUNNING \
+            --query 'data[0].id' --raw-output)
+          [ "$INSTANCE_ID" != "null" ] || { echo "Instância não encontrada ou não está running"; exit 1; }
+          echo "INSTANCE_ID=$INSTANCE_ID" >> "$GITHUB_ENV"
+
+      - name: Rodar via Run Command
+        run: |
+          SAMPLE="${{ inputs.sample || '500' }}"
+          cat > /tmp/run-command-content.json <<JSON
+          {
+            "source": {
+              "sourceType": "TEXT",
+              "text": "set -e\ndocker login gru.ocir.io -u $OCI_NAMESPACE/ci-deploy -p '${{ secrets.OCI_AUTH_TOKEN }}'\ndocker pull $OCIR_URI:$IMAGE_TAG\ndocker rm -f $CONTAINER_NAME 2>/dev/null || true\ndocker run --name $CONTAINER_NAME --rm $OCIR_URI:$IMAGE_TAG --sample $SAMPLE\ndocker image prune -f"
+            },
+            "output": {
+              "outputType": "TEXT"
+            }
+          }
+          JSON
+
+          COMMAND_ID=$(oci instance-agent command create \
+            --compartment-id "$OCI_COMPARTMENT_ID" \
+            --display-name "run-$OCIR_REPOSITORY-$IMAGE_TAG" \
+            --target "{\"instanceId\":\"$INSTANCE_ID\"}" \
+            --content file:///tmp/run-command-content.json \
+            --timeout-in-seconds 300 \
+            --query 'data.id' --raw-output)
+          echo "COMMAND_ID=$COMMAND_ID" >> "$GITHUB_ENV"
+          echo "Aguardando comando $COMMAND_ID na instância $INSTANCE_ID"
+
+          for i in $(seq 1 40); do
+            STATE=$(oci instance-agent command-execution get --instance-id "$INSTANCE_ID" --command-id "$COMMAND_ID" --query 'data."lifecycle-state"' --raw-output 2>/dev/null || echo "PENDING")
+            echo "Estado: $STATE"
+            [ "$STATE" = "SUCCEEDED" ] && break
+            case "$STATE" in
+              FAILED|TIMED_OUT|CANCELED) exit 1 ;;
+            esac
+            sleep 10
+            if [ "$i" = "40" ]; then
+              echo "Timeout esperando o comando terminar"
+              exit 1
+            fi
+          done
+
+      - name: Validar saída do pipeline (smoke test)
+        run: |
+          OUTPUT=$(oci instance-agent command-execution get --instance-id "$INSTANCE_ID" --command-id "$COMMAND_ID" --query 'data.content."{stdout: \"exit-code\"}"' --raw-output 2>&1 || echo "")
+          echo "$OUTPUT"
