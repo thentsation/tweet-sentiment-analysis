@@ -3,6 +3,20 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
+    container_name: tweet-pipeline
+    env_file:
+      - .env
     volumes:
       - ./reports:/app/reports
     command: ['--sample', '2000']
+
+  # Serves ./reports (figures + metrics.json) so results are viewable in a
+  # browser after each pipeline run — the pipeline itself has no web UI.
+  reports:
+    image: nginx:alpine
+    container_name: tweet-reports
+    restart: unless-stopped
+    ports:
+      - '8020:80'
+    volumes:
+      - ./reports:/usr/share/nginx/html:ro

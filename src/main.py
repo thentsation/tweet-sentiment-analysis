@@ -3,6 +3,7 @@ from pathlib import Path
 
 from config import PipelineConfig
 from pipeline import run_pipeline
+from storage import upload_reports
 
 
 def parse_args() -> argparse.Namespace:
@@ -67,6 +68,10 @@ def main() -> None:
     print()
     print(result.evaluation.classification_report)
     print(f'Relatórios salvos em: {result.output_dir.resolve()}')
+
+    run_id = upload_reports(result.output_dir)
+    if run_id:
+        print(f'Relatórios enviados ao MinIO em: {run_id}/')
 
 
 if __name__ == '__main__':
