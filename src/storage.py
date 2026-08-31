@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from minio import Minio
@@ -24,7 +24,7 @@ def upload_reports(output_dir: Path) -> str | None:
     if not client.bucket_exists(bucket):
         client.make_bucket(bucket)
 
-    run_id = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
+    run_id = datetime.now(UTC).strftime('%Y%m%d-%H%M%S')
     for path in output_dir.rglob('*'):
         if path.is_file():
             object_name = f'{run_id}/{path.relative_to(output_dir).as_posix()}'
