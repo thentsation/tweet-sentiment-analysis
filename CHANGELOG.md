@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.1 (2026-08-31)
+
+### Bug Fixes
+
+- **storage**: Update datetime import to use UTC for consistency
+  ([`f9a094b`](https://github.com/ntsation/tweet-sentiment-analysis/commit/f9a094b8356a00c0a06c077ea9e34ba1d86db4ec))
+
+
 ## v1.2.0 (2026-08-31)
 
 ### Chores
