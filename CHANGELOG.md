@@ -2,6 +2,31 @@
 
 <!-- version list -->
 
+## v1.2.0 (2026-08-31)
+
+### Chores
+
+- **ci**: Bump docker/login-action from 3 to 4
+  ([`b7c039e`](https://github.com/ntsation/tweet-sentiment-analysis/commit/b7c039e07d309e2652119dc85032ed762f3e820f))
+
+- **ci**: Bump docker/setup-qemu-action from 3 to 4
+  ([`bcf5a73`](https://github.com/ntsation/tweet-sentiment-analysis/commit/bcf5a735efe7e7540b149e31e0950c8feb04afb0))
+
+- **ci**: Bump python-semantic-release/python-semantic-release
+  ([`1fdc19b`](https://github.com/ntsation/tweet-sentiment-analysis/commit/1fdc19b836c4581f7fb24df19f5b944e90ca5f44))
+
+- **deps**: Bump ruff from 0.16.3 to 0.16.4 in /config
+  ([`f860ab0`](https://github.com/ntsation/tweet-sentiment-analysis/commit/f860ab072f89bc676cc747f9f30864172bff615d))
+
+- **deps**: Bump ruff from 0.16.4 to 0.16.5 in /config
+  ([`703afa6`](https://github.com/ntsation/tweet-sentiment-analysis/commit/703afa668db1450217e0bf9bd4e2b85050060774))
+
+### Features
+
+- **docker**: Add nginx configuration for serving reports
+  ([`5d76d5b`](https://github.com/ntsation/tweet-sentiment-analysis/commit/5d76d5b7c597ee9dc6c721bfa3fce7da7cbee39d))
+
+
 ## v1.1.0 (2026-08-22)
 
 ### Features
