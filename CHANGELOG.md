@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.5 (2026-09-03)
+
+### Bug Fixes
+
+- Drop GHA layer cache from the GHCR push build
+  ([`e5bced8`](https://github.com/thentsation/tweet-sentiment-analysis/commit/e5bced8bb4adb5fb3c16692d42ef9b6f9edc361c))
+
+
 ## v1.2.4 (2026-09-03)
 
 ### Bug Fixes
