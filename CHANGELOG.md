@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.4 (2026-09-03)
+
+### Bug Fixes
+
+- Use ETag-based optimistic concurrency for security list updates
+  ([`c81d1fd`](https://github.com/thentsation/tweet-sentiment-analysis/commit/c81d1fdc5c622a47272cb36e0069f2b1692c9378))
+
+
 ## v1.2.3 (2026-09-03)
 
 ### Bug Fixes
