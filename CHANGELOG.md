@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.2.2 (2026-09-03)
+
+### Bug Fixes
+
+- **audit**: Ignore specific vulnerability in pip-audit checks
+  ([`ec6e6fe`](https://github.com/ntsation/tweet-sentiment-analysis/commit/ec6e6feb24ac3dd076b1baa51834cf0a26cb3920))
+
+### Chores
+
+- **deps**: Bump minio from 7.2.9 to 7.2.20 in /config
+  ([`a97ae88`](https://github.com/ntsation/tweet-sentiment-analysis/commit/a97ae88fda61031dba259cc49ccd7cf41d5ce291))
+
+
 ## v1.2.1 (2026-08-31)
 
 ### Bug Fixes
