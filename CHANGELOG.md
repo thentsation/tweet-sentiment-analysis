@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.6 (2026-09-03)
+
+### Bug Fixes
+
+- Point GHCR_IMAGE at the thentsation org after the repo transfer
+  ([`7ecf493`](https://github.com/thentsation/tweet-sentiment-analysis/commit/7ecf493f8badaa160cbf4d3e2bf14dfb7990528d))
+
+
 ## v1.2.5 (2026-09-03)
 
 ### Bug Fixes
