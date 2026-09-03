@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.3 (2026-09-03)
+
+### Bug Fixes
+
+- Preserve trailing newline when writing SSH key from secret
+  ([`daa31d1`](https://github.com/thentsation/tweet-sentiment-analysis/commit/daa31d11d612f9ea93a033c1fddec03c811860fc))
+
+
 ## v1.2.2 (2026-09-03)
 
 ### Bug Fixes
