@@ -19,7 +19,7 @@ env:
   OCI_COMPARTMENT_ID: ${{ secrets.OCI_COMPARTMENT_ID }}
   OCI_SECURITY_LIST_ID: ${{ secrets.OCI_SECURITY_LIST_ID }}
   OCIR_REPOSITORY: tweet-sentiment-analysis
-  GHCR_IMAGE: ghcr.io/ntsation/tweet-sentiment-analysis
+  GHCR_IMAGE: ghcr.io/thentsation/tweet-sentiment-analysis
   CONTAINER_NAME: tweet-sentiment-analysis-run
 
 jobs:
