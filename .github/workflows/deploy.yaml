@@ -112,7 +112,7 @@ jobs:
         run: |
           SAMPLE="${{ inputs.sample || '500' }}"
           mkdir -p ~/.ssh
-          printf '%s' "${{ secrets.OCI_SSH_PRIVATE_KEY }}" > ~/.ssh/oci_key.pem
+          printf '%s\n' "${{ secrets.OCI_SSH_PRIVATE_KEY }}" > ~/.ssh/oci_key.pem
           chmod 600 ~/.ssh/oci_key.pem
 
           for i in $(seq 1 10); do
