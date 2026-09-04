@@ -2,6 +2,36 @@
 
 <!-- version list -->
 
+## v1.3.0 (2026-09-04)
+
+### Bug Fixes
+
+- Gracefully handle missing Dependabot alerts permission
+  ([`9a4cfe2`](https://github.com/thentsation/tweet-sentiment-analysis/commit/9a4cfe2d241b587ddff54a051f9f98b08b7e14a1))
+
+- Pass --repo explicitly to gh CLI calls with no checkout
+  ([`1ac203d`](https://github.com/thentsation/tweet-sentiment-analysis/commit/1ac203d88424f5c77dca1b8dcd05321d139eae00))
+
+- Send the workflow warning annotation to stderr, not the issue body
+  ([`4753a08`](https://github.com/thentsation/tweet-sentiment-analysis/commit/4753a08dd22472013599641de672b2f34a3ab438))
+
+- Use RELEASE_PAT to let semantic-release push past branch protection
+  ([`02ab578`](https://github.com/thentsation/tweet-sentiment-analysis/commit/02ab5789c2e3d55d4f60f42a1615c64a8f13a637))
+
+### Continuous Integration
+
+- Add Dependency & Security Dashboard, label major Dependabot PRs
+  ([`070e971`](https://github.com/thentsation/tweet-sentiment-analysis/commit/070e9712e38a4f5b00f99e5232ae65cf5500fab2))
+
+- Gate Docker pipeline on CI success and add Dependabot auto-merge
+  ([`ab89e4f`](https://github.com/thentsation/tweet-sentiment-analysis/commit/ab89e4fc790706e971e092e43a2f8bd34cd8fa63))
+
+### Features
+
+- Auto-close the dashboard issue when nothing is pending
+  ([`9959bb4`](https://github.com/thentsation/tweet-sentiment-analysis/commit/9959bb47b592fe7bc1f59b54a0c6b98bf60daa52))
+
+
 ## v1.2.6 (2026-09-03)
 
 ### Bug Fixes
