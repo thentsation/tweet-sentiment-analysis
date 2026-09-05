@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.3.1 (2026-09-05)
+
+### Bug Fixes
+
+- Prune stale image tags left behind on deploy
+  ([`bbc2246`](https://github.com/thentsation/tweet-sentiment-analysis/commit/bbc2246051fddef7097831860c7904dbbec4e780))
+
+
 ## v1.3.0 (2026-09-04)
 
 ### Bug Fixes
