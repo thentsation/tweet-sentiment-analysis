@@ -1,30 +1,18 @@
 [🇧🇷 Português](ARTIGO.md) | 🇺🇸 English
 
-# From notebook to production: productizing a tweet sentiment analysis pipeline
+# What a notebook of covid tweets taught me about sentiment labeling
 
-How an exploratory NLP notebook became a deterministic, tested, fully-typed pipeline with CI/CD — and, along the way, gained a second annotator, a model benchmark, temporal trends, and automatic topic selection.
+I started out just wanting to tidy up a messy notebook. I ended up finding out that the two sentiment labelers I was using only agree on a little over half of the tweets — and that changed what I think "sentiment analysis" actually measures.
 
-## The starting point
+## Where this came from
 
-The project started like most data science projects: a Jupyter notebook (`notebooks/tweetML.ipynb`) that loaded 179k COVID-19 tweets, ran TextBlob for sentiment, LDA for topics, and trained a Naive Bayes. It worked. And that was it.
+The starting point was `notebooks/tweetML.ipynb`: 179k COVID-19 tweets, TextBlob computing sentiment, LDA pulling out topics, a Naive Bayes trained on top of it. It ran cell by cell, produced a result, and for a while that was enough — it was an NLP exercise, not a system.
 
-The problem is that a notebook isn't an engineering artifact. It was missing everything that separates exploratory analysis from a pipeline you'd put your name on:
+The problem showed up when I tried to reproduce an analysis two days later: redoing anything meant running the whole notebook from the top, in the right order, hoping the global state hadn't quietly changed meaning along the way. There wasn't a single test — changing preprocessing meant praying the numbers wouldn't shift without me noticing. `requirements.txt` listed libraries I wasn't even using anymore. No CI, no lint, no type checking. And the most important output of the notebook, the classifier's accuracy, only existed inside the cell that printed it — close Jupyter and the number was gone with it.
 
-- All the logic lived in cells — re-running the analysis meant executing the entire notebook from scratch, with global state depending on execution order
-- Zero automated tests — changing preprocessing meant praying the numbers wouldn't move
-- `requirements.txt` with no version pinning (listing libraries that weren't even used)
-- No CI, no lint, no type checking — nothing
-- Results trapped in cell outputs: the classifier accuracy only existed inside the notebook
+## Getting the analysis out of the cells
 
-This article is the path from there to here.
-
-## First stop: the foundation (extract, test, automate)
-
-The rule I followed: **no new feature before the existing logic is covered by tests.** But before testing, there had to be something to test.
-
-### Extracting the notebook into modules
-
-Each cell became a module with one responsibility — and one test boundary:
+The rule I set for myself: no new feature before the existing logic is covered by a test. But to test anything, I first needed something testable — so I broke the notebook into modules, each with one responsibility and one test boundary:
 
 ```
 src/
@@ -37,35 +25,25 @@ src/
 └── main.py            # CLI
 ```
 
-The same analysis that lived in cells tied together by global variables became a pure `run_pipeline(config)` function: a frozen, validated `PipelineConfig` goes in, a `PipelineResult` + `reports/metrics.json` comes out. Today's CLI (`python src/main.py --sample 2000`) runs exactly what the notebook ran.
+The same analysis that used to live tied together by global variables between cells became a pure `run_pipeline(config)` function: a frozen, validated `PipelineConfig` goes in, a `PipelineResult` plus `reports/metrics.json` comes out. Today, `python src/main.py --sample 2000` runs exactly what the notebook ran, just reproducibly.
 
-### Tests with synthetic fixtures
+The dataset is 66 MB, so tests couldn't depend on it or on downloading anything. The fixtures build synthetic tweets that are clearly positive, negative, and neutral — "I love this amazing day", "I hate this terrible day", "The office opens at nine" — and validate signs and boundaries: polarity-sign classification, confusion matrix shape, determinism under fixed seeds. CI runs on every commit: lint, format check, mypy (`disallow_untyped_defs`), pytest with a coverage threshold across a Python 3.11/3.12 matrix, dependency auditing with pip-audit, and a **pipeline smoke** job that runs the real thing on a 500-tweet sample and checks the reports come out the other side — a unit test won't catch "the CSV has no `date` column"; smoke will.
 
-The dataset is 66 MB — tests can't depend on it (or on downloading anything). The fixtures build synthetic tweets that are clearly positive, negative, and neutral ("I love this amazing day", "I hate this terrible day", "The office opens at nine") and validate signs and boundaries: polarity-sign classification, confusion matrix shape, determinism under fixed seeds.
+The Docker image became a multi-stage build on `python:3.14-slim`, installing from the lockfile, non-root user, stopwords and the VADER lexicon pre-downloaded at build time, dataset bundled in — the whole pipeline runs anywhere Docker does: `docker run tweet-sentiment --sample 5000`. In CI, the image gets scanned with Trivy before it goes to GHCR.
 
-### CI that runs on every commit
+## Cleaning actual tweets, not generic text
 
-Lint, format check, mypy (with `disallow_untyped_defs`), pytest with a coverage threshold across a Python 3.11/3.12 matrix, dependency auditing with pip-audit — and a **pipeline smoke** job that runs the real pipeline on a 500-tweet sample and asserts the reports exist. Unit tests won't catch "the CSV has no `date` column"; smoke will.
+The original notebook only did lowercasing and stopword removal — fine for book text, not for a tweet. Truncated URLs (`https://t.co/...`), @mentions, "RT" prefixes, and hashtags were becoming features for the LDA and the classifier without me ever deciding that on purpose. The cleaning now strips URLs, mentions, and RT explicitly, and unwraps `#COVID19` into `COVID19` — the hashtag's text carries meaning, the `#` is just punctuation getting in the vectorizer's way.
 
-### Docker without surprises
+## The finding that changed the project: two labelers, ~53% agreement
 
-Multi-stage image on `python:3.14-slim`, installs from the lockfile, non-root user, stopwords and the VADER lexicon pre-downloaded at build time — and the dataset bundled in. The whole pipeline runs anywhere Docker does: `docker run tweet-sentiment --sample 5000`. In CI, the image is scanned with Trivy and pushed to GHCR.
+The training labels came only from TextBlob, which wasn't built for social media. I added VADER as a second labeler — it understands ALL-CAPS, "!!!", and emojis, things TextBlob ignores — and an agreement analysis between the two in `metrics.json`.
 
-## The features: better tweets, better analyses
+The result was the most interesting part of the entire project: **the two agree on only ~53% of tweets**. On nearly half the corpus, each labeler thinks the other got it wrong. That's not implementation noise — it's evidence that "lexical sentiment" is a noisy proxy for what we actually want to measure, and it became the central argument for the project's natural next step: human annotation or a pre-trained model, instead of blindly trusting lexicon heuristics.
 
-With the foundation in place, the attack on the quality problems the notebook hid.
+## TF-IDF with bigrams and a 4-model benchmark
 
-### Tweet-specific cleaning
-
-The notebook only did lowercase + stopwords. But tweets have truncated URLs (`https://t.co/...`), @mentions, "RT" prefixes, and hashtags — all of it became LDA and classifier features. The cleaning now strips URLs, mentions, and RT, and unwraps `#COVID19` into `COVID19` (the hashtag text is content; the `#` is punctuation).
-
-### Two annotators instead of one
-
-The training labels came only from TextBlob — which wasn't built for social media. I added **VADER** as a second annotator (it understands ALL-CAPS, "!!!", and emojis) and an agreement analysis in `metrics.json`. The result is the project's most interesting finding: **the two agree on only ~53% of tweets**. Each annotator thinks the other is wrong on nearly half the corpus. That's the clearest evidence that lexical labels are noisy proxies — and the central argument for the roadmap (human annotation or a pre-trained model).
-
-### TF-IDF with bigrams + model benchmark
-
-A unigram `CountVectorizer` loses "not good". Switching to `TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True)` captures negations and compound expressions. And instead of trusting Naive Bayes on faith, a 4-model benchmark on the same split:
+A unigram `CountVectorizer` loses negation — "not good" becomes "good" as far as the classifier is concerned. I switched to `TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True)`, which captures negations and compound expressions. And instead of keeping Naive Bayes just because it was already there, I ran a 4-model benchmark on the same split:
 
 | model | accuracy | macro-F1 |
 | --- | --- | --- |
@@ -74,27 +52,20 @@ A unigram `CountVectorizer` loses "not good". Switching to `TfidfVectorizer(ngra
 | ComplementNB | 0.729 | 0.701 |
 | MultinomialNB | 0.731 | 0.651 |
 
-LinearSVC wins by a clear margin. And ComplementNB — designed for imbalanced classes — beats MultinomialNB on macro-F1 precisely because `negative` is the minority class (micro-average hides it; macro exposes it).
+LinearSVC won by a clear margin. The part I didn't expect: ComplementNB — designed specifically for imbalanced classes — beats MultinomialNB on macro-F1, because `negative` is the minority class in this dataset. The micro-average hides that imbalance; the macro exposes it.
 
-### The temporal dimension the notebook ignored
+## The column the original notebook ignored
 
-The dataset has a `date` column and it was used for nothing. Now `metrics.json` summarizes the covered period, the most negative and most positive days, and `figures/sentiment_timeline.png` plots daily average polarity — TextBlob and VADER side by side. When the curves diverge on a given day, that's a signal the content there is captured by only one of the lexicons.
+The dataset always had a `date` column, and it was never used for anything. Now `metrics.json` summarizes the covered period, points out the most negative and most positive day, and `figures/sentiment_timeline.png` plots daily average polarity with TextBlob and VADER side by side. When the two curves diverge on a given day, that's a signal there's content that day only one of the two lexicons is picking up correctly.
 
-### Topics without guessing k
+## Topics without guessing k
 
-Picking `num_topics=5` was arbitrary. With `--tune-topics`, the pipeline trains LDA for k ∈ {3, 5, 7, 10} and picks the highest coherence (simplified UMass, computed over the document-term matrix itself — no extra dependencies). On the 20k-tweet sample, k=3 won. The `metrics.json` keeps every candidate's score for auditing.
+`num_topics=5` in the original notebook was a number picked in the dark. With `--tune-topics`, the pipeline trains LDA for k ∈ {3, 5, 7, 10} and picks the one with the highest coherence — simplified UMass, computed over the document-term matrix itself, no extra dependency. On the 20k-tweet sample, k=3 won. `metrics.json` keeps every candidate's score, not just the winner, so I can audit the decision later.
 
-## Lessons the tutorial doesn't tell you
+## What I learned doing this
 
-1. **Determinism first.** Fixed seeds on sampling, split, and LDA mean two runs produce the same `metrics.json` — and diffing the metrics is the data scientist's code review.
-2. **Vulnerabilities can come from where you least expect.** Trivy found CVEs in `msgpack` and `setuptools` *vendored inside pip* (duplicated in the ensurepip wheel). Fix: remove ensurepip from the image and point the skip-dirs at the right path. None of it was my dependency.
-3. **Annotator agreement is a free quality metric.** Before training any model, measuring how much two heuristics agree tells you a lot about the ceiling of what you can learn.
-4. **The notebook doesn't die.** It stays in the repository as a record of the original exploration. The pipeline is what the notebook *wanted to be* when it grew up — and the source of truth is the tested code, not the cell output.
+Determinism comes before everything else: fixed seeds on sampling, split, and LDA mean two runs produce the same `metrics.json`, and diffing that file became my version of a data scientist's code review. Vulnerabilities can come from where you least expect — Trivy found CVEs in `msgpack` and `setuptools` vendored *inside pip itself*, duplicated in the ensurepip wheel; the fix was removing ensurepip from the image and pointing the skip-dirs at the right path, and none of it was actually my dependency. Agreement between labelers is a nearly free quality metric: before training any model, measuring how much two heuristics agree with each other already tells you a lot about the ceiling of what can be learned from the data. And the notebook didn't die — it's still in the repository as a record of the original exploration; the pipeline is what it wanted to be when it grew up, and the source of truth is now tested code, not cell output.
 
-## Final state
+## Where the pipeline stands now
 
-- 64 tests, 97% coverage, a 95% threshold blocking CI
-- ruff (lint + format) and mypy clean, running on every push
-- Python matrix CI, pipeline smoke on real data, Docker image scanned with Trivy and published to GHCR
-- Pipeline with dual sentiment annotation, a 4-model benchmark, temporal trends, and coherence-based topic selection
-- A reproducible `metrics.json` — the final analysis artifact, versioned alongside the code
+64 tests, 97% coverage, a 95% threshold gating CI. `ruff` (lint + format) and `mypy` clean on every push, CI across a Python matrix, pipeline smoke on real data, Docker image scanned with Trivy and published to GHCR. The pipeline today has dual sentiment annotation, a 4-model benchmark, temporal trends, and coherence-based topic selection — and `metrics.json` is reproducible, the final artifact of the analysis, versioned right alongside the code.

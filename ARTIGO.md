@@ -1,30 +1,18 @@
 🇧🇷 Português | [🇺🇸 English](ARTIGO.en-us.md)
 
-# De notebook a produção: produtizando um pipeline de análise de sentimento em tweets
+# O que um notebook de tweets sobre covid me ensinou sobre rotulagem de sentimento
 
-Como um notebook exploratório de NLP virou um pipeline determinístico, testado, tipado e com CI/CD — e, no caminho, ganhou um segundo rotulador, benchmark de modelos, tendência temporal e seleção automática de tópicos.
+Comecei querendo só organizar um notebook bagunçado. Terminei descobrindo que os dois rotuladores de sentimento que eu estava usando concordam em pouco mais da metade dos tweets — e isso mudou o que eu acho que "análise de sentimento" realmente mede.
 
-## O ponto de partida
+## De onde isso veio
 
-O projeto começou como a maioria dos projetos de ciência de dados: um Jupyter notebook (`notebooks/tweetML.ipynb`) que carregava 179 mil tweets sobre COVID-19, rodava TextBlob para sentimento, LDA para tópicos e treinava um Naive Bayes. Funcionava. E era isso.
+O ponto de partida era `notebooks/tweetML.ipynb`: 179 mil tweets sobre COVID-19, TextBlob calculando sentimento, LDA extraindo tópicos, um Naive Bayes treinado em cima disso. Rodava célula por célula, dava resultado, e por um tempo isso foi suficiente — era um exercício de NLP, não um sistema.
 
-O problema é que notebook não é artefato de engenharia. Faltava tudo o que separa uma análise exploratória de um pipeline que você colocaria a assinatura embaixo:
+O problema apareceu quando tentei reproduzir uma análise dois dias depois: refazer qualquer coisa significava rodar o notebook inteiro do início, na ordem certa, torcendo pro estado global não ter mudado de sentido no meio do caminho. Não tinha um teste sequer — mudar o pré-processamento era rezar pra os números não se moverem sem eu perceber. O `requirements.txt` listava bibliotecas que eu nem usava mais. Não tinha CI, lint ou type checking. E o resultado mais importante do notebook, a acurácia do classificador, só existia dentro da própria célula que a imprimia — se eu fechasse o Jupyter, a informação sumia com ele.
 
-- Toda a lógica vivia em células — refazer a análise era rodar o notebook inteiro, do zero, com o estado global dependendo da ordem de execução
-- Zero testes automatizados — mudar o pré-processamento era rezar para os números não mudarem
-- `requirements.txt` sem pin de versão (e `pip install` listando bibliotecas que nem eram usadas)
-- Sem CI, sem lint, sem type checking — nada
-- Resultados presos em outputs de célula: a acurácia do classificador só existia dentro do notebook
+## Tirar a análise de dentro das células
 
-Este artigo é o caminho de lá até cá.
-
-## Primeira parada: a base (extrair, testar, automatizar)
-
-A regra que segui: **nenhuma feature nova antes de a lógica existente estar coberta por testes.** Mas antes de testar, era preciso ter o que testar.
-
-### Extraindo o notebook em módulos
-
-Cada célula virou um módulo com uma responsabilidade — e uma fronteira de teste:
+A regra que me impus: nenhuma feature nova antes de a lógica existente estar coberta por teste. Mas pra testar, primeiro eu precisava ter o que testar — então quebrei o notebook em módulos, cada um com uma responsabilidade e uma fronteira de teste:
 
 ```
 src/
@@ -37,35 +25,25 @@ src/
 └── main.py            # CLI
 ```
 
-A mesma análise que vivia em células interligadas por variáveis globais virou uma função `run_pipeline(config)` pura: entra uma `PipelineConfig` (dataclass congelada e validada), sai um `PipelineResult` + `reports/metrics.json`. A CLI de hoje (`python src/main.py --sample 2000`) roda exatamente o que o notebook rodava.
+A mesma análise que antes vivia amarrada por variáveis globais entre células virou uma função pura, `run_pipeline(config)`: entra uma `PipelineConfig` (dataclass congelada e validada), sai um `PipelineResult` mais `reports/metrics.json`. Hoje `python src/main.py --sample 2000` roda exatamente o que o notebook rodava, só que de forma reproduzível.
 
-### Testes com fixtures sintéticas
+O dataset tem 66 MB, então os testes não podiam depender dele nem de baixar nada. As fixtures constroem tweets sintéticos claramente positivos, negativos e neutros — "I love this amazing day", "I hate this terrible day", "The office opens at nine" — e validam sinal e fronteira: classificação pelo sinal da polaridade, coerência da matriz de confusão, determinismo com sementes fixas. O CI roda a cada commit: lint, format check, mypy (`disallow_untyped_defs`), pytest com threshold de cobertura em matrix de Python 3.11/3.12, auditoria de dependências com pip-audit, e um job de **smoke do pipeline** que roda a coisa real numa amostra de 500 tweets e confere que os relatórios saem do outro lado — teste unitário não pega "o CSV não tem a coluna `date`"; smoke pega.
 
-O dataset tem 66 MB — testes não podem depender dele (nem do download de nada). As fixtures constroem tweets sintéticos claramente positivos, negativos e neutros ("I love this amazing day", "I hate this terrible day", "The office opens at nine") e validam sinais e fronteiras: classificação por sinal da polaridade, coerência da matriz de confusão, determinismo com sementes fixas.
+A imagem Docker ficou multi-stage em `python:3.14-slim`, instalando a partir do lockfile, usuário não-root, stopwords e léxico do VADER pré-baixados no build, dataset embutido — o pipeline inteiro roda em qualquer lugar com Docker: `docker run tweet-sentiment --sample 5000`. No CI a imagem é escaneada com Trivy antes de ir pro GHCR.
 
-### CI que roda a cada commit
+## Limpando tweet de verdade, não texto genérico
 
-Lint, format check, mypy (com `disallow_untyped_defs`), pytest com threshold de cobertura em matrix de Python 3.11/3.12, auditoria de dependências com pip-audit — e um job de **smoke do pipeline** que roda o pipeline real em uma amostra de 500 tweets e verifica que os relatórios existem. Teste de unidade não pega "o CSV não tem a coluna `date`"; smoke pega.
+O notebook original só fazia lowercase e removia stopwords — o suficiente para texto de livro, não pra tweet. URLs truncadas (`https://t.co/...`), @menções, prefixo "RT" e hashtags viravam feature da LDA e do classificador sem eu ter decidido isso conscientemente. A limpeza agora remove URLs, menções e RT explicitamente, e desembrulha `#COVID19` em `COVID19` — o texto da hashtag carrega sentido, o `#` é só pontuação atrapalhando o vetorizador.
 
-### Docker sem surpresas
+## A descoberta que mudou o projeto: dois rotuladores, ~53% de concordância
 
-Imagem multi-stage com `python:3.14-slim`, instalação a partir do lockfile, usuário não-root, stopwords e léxico do VADER pré-baixados no build — e o dataset embutido. O pipeline inteiro roda em qualquer lugar com Docker: `docker run tweet-sentiment --sample 5000`. No CI, a imagem é escaneada com Trivy e publicada no GHCR.
+Os rótulos de treino vinham só do TextBlob, que não foi desenhado pra social media. Adicionei o VADER como segundo rotulador — ele entende MAIÚSCULAS, "!!!" e emojis, coisas que TextBlob ignora — e uma análise de concordância entre os dois em `metrics.json`.
 
-## As features: melhorar os tweets e as análises
+O resultado foi a parte mais interessante do projeto inteiro: **os dois concordam em apenas ~53% dos tweets**. Quase metade do corpus, cada rotulador acha que o outro errou. Isso não é ruído de implementação — é evidência de que "sentimento léxico" é uma proxy barulhenta pro que a gente realmente quer medir, e virou o argumento central para o próximo passo natural do projeto: anotação humana ou um modelo pré-treinado, em vez de confiar cegamente em heurística de léxico.
 
-Com a base pronta, o ataque aos problemas de qualidade que o notebook escondia.
+## TF-IDF com bigramas e um benchmark de 4 modelos
 
-### Limpeza específica de tweets
-
-O notebook só fazia lowercase + stopwords. Mas tweets têm URLs truncadas (`https://t.co/...`), @menções, prefixo "RT" e hashtags — tudo isso virava feature da LDA e do classificador. A limpeza agora remove URLs, menções e RT, e desembrulha `#COVID19` em `COVID19` (o texto da hashtag é conteúdo; o `#` é pontuação).
-
-### Dois rotuladores em vez de um
-
-Os rótulos de treinamento vinham só do TextBlob — que não foi feito para social media. Adicionei o **VADER** como segundo rotulador (ele entende MAIÚSCULAS, "!!!" e emojis) e uma análise de concordância no `metrics.json`. O resultado é a descoberta mais interessante do projeto: **os dois concordam em apenas ~53% dos tweets**. Cada rotulador acha que o outro erra em quase metade do corpus. É a evidência mais clara de que rótulo léxico é proxy ruidosa — e o argumento central para o roadmap (anotação humana ou modelo pré-treinado).
-
-### TF-IDF com bigramas + benchmark de modelos
-
-`CountVectorizer` de unigramas perde "not good". A troca por `TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True)` captura negações e expressões compostas. E em vez de confiar no Naive Bayes por fé, um benchmark de 4 modelos no mesmo split:
+`CountVectorizer` de unigrama perde negação — "not good" vira "good" pro classificador. Troquei por `TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True)`, que captura negações e expressões compostas. E em vez de manter o Naive Bayes só porque já estava lá, rodei um benchmark de 4 modelos no mesmo split:
 
 | modelo | acurácia | macro-F1 |
 | --- | --- | --- |
@@ -74,27 +52,20 @@ Os rótulos de treinamento vinham só do TextBlob — que não foi feito para so
 | ComplementNB | 0,729 | 0,701 |
 | MultinomialNB | 0,731 | 0,651 |
 
-O LinearSVC vence com folga. E o ComplementNB — desenhado para classes desbalanceadas — supera o MultinomialNB no macro-F1 justamente porque `negative` é minoria (o micro-average esconde isso, o macro expõe).
+LinearSVC venceu com folga. O detalhe que eu não esperava: ComplementNB — desenhado justamente para classes desbalanceadas — supera o MultinomialNB no macro-F1, porque `negative` é minoria no dataset. O micro-average esconde esse desbalanceamento; o macro expõe.
 
-### A dimensão temporal que o notebook ignorava
+## A coluna que o notebook original ignorava
 
-O dataset tem coluna `date` e ela não era usada para nada. Agora o `metrics.json` resume o período coberto, o dia mais negativo e o mais positivo, e `figures/sentiment_timeline.png` plota a polaridade média diária — TextBlob e VADER lado a lado. Quando as curvas divergem em um dia, é um sinal de que ali tem conteúdo que só um dos léxicos captura.
+O dataset sempre teve uma coluna `date`, e ela nunca foi usada pra nada. Agora `metrics.json` resume o período coberto, aponta o dia mais negativo e o mais positivo, e `figures/sentiment_timeline.png` plota a polaridade média diária com TextBlob e VADER lado a lado. Quando as duas curvas divergem num dia específico, isso é sinal de que há conteúdo naquele dia que só um dos dois léxicos está captando corretamente.
 
-### Tópicos sem chutar k
+## Tópicos sem chutar k
 
-Escolher `num_topics=5` era arbitrário. Com `--tune-topics`, o pipeline treina LDA para k ∈ {3, 5, 7, 10} e escolhe o de maior coerência (UMass simplificada, computada sobre a própria matriz documento-termo — sem dependência extra). Na amostra de 20 mil tweets, k=3 venceu. O `metrics.json` guarda os escores de todos os candidatos para auditoria.
+`num_topics=5` no notebook original era um número escolhido no escuro. Com `--tune-topics`, o pipeline treina LDA para k ∈ {3, 5, 7, 10} e escolhe o de maior coerência — UMass simplificada, calculada sobre a própria matriz documento-termo, sem dependência extra. Na amostra de 20 mil tweets, k=3 venceu. `metrics.json` guarda o escore de todos os candidatos, não só o vencedor, pra eu poder auditar a decisão depois.
 
-## Lições que o tutorial não conta
+## O que eu aprendi fazendo isso
 
-1. **Determinismo primeiro.** Semente fixa em amostragem, split e LDA significa que dois runs produzem o mesmo `metrics.json` — e o diff do metrics é a revisão de código do cientista de dados.
-2. **Vulnerabilidade pode vir de onde você menos espera.** O Trivy achou CVEs no `msgpack` e `setuptools` *vendorizados dentro do pip* (e duplicados no wheel do ensurepip). Fix: remover o ensurepip da imagem e apontar o skip-dirs certo. Não foi nenhuma dependência minha.
-3. **Concordância entre rotuladores é métrica de qualidade gratuita.** Antes de treinar qualquer modelo, medir o quanto duas heurísticas concordam diz muito sobre o teto do que você pode aprender.
-4. **Notebook não morre.** Ele continua no repositório como registro da exploração original. O pipeline é o que o notebook *queria ser* quando crescer — e a fonte da verdade é o código testado, não o output da célula.
+Determinismo vem antes de tudo: semente fixa em amostragem, split e LDA significa que dois runs produzem o mesmo `metrics.json`, e o diff desse arquivo virou minha revisão de código de cientista de dados. Vulnerabilidade pode vir de onde você menos espera — o Trivy achou CVEs em `msgpack` e `setuptools` vendorizados *dentro do próprio pip*, duplicados no wheel do ensurepip; a correção foi remover o ensurepip da imagem e apontar o skip-dirs certo, e nenhuma delas era dependência minha. Concordância entre rotuladores é uma métrica de qualidade praticamente de graça: antes de treinar qualquer modelo, medir o quanto duas heurísticas concordam entre si já diz muito sobre o teto do que dá para aprender dali. E o notebook não morreu — ele continua no repositório como registro da exploração original; o pipeline é o que ele queria ser quando crescesse, e a fonte da verdade agora é código testado, não output de célula.
 
-## Estado final
+## Onde o pipeline está agora
 
-- 64 testes, 97% de cobertura, threshold de 95% bloqueando no CI
-- ruff (lint + format) e mypy limpos, rodando a cada push
-- CI em matrix de Python, smoke do pipeline com dados reais, imagem Docker escaneada com Trivy e publicada no GHCR
-- Pipeline com dupla anotação de sentimento, benchmark de 4 modelos, tendência temporal e seleção de tópicos por coerência
-- `metrics.json` reprodutível — o artefato final da análise, versionado junto com o código
+64 testes, 97% de cobertura, threshold de 95% bloqueando no CI. `ruff` (lint + format) e `mypy` limpos a cada push, CI em matrix de Python, smoke do pipeline com dados reais, imagem Docker escaneada com Trivy e publicada no GHCR. O pipeline hoje tem anotação dupla de sentimento, benchmark de 4 modelos, tendência temporal e seleção de tópicos por coerência — e `metrics.json` é reproduzível, o artefato final da análise, versionado junto com o código.
