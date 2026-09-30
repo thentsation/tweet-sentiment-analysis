@@ -10,7 +10,7 @@ on:
       - '**.md'
       - 'docs/**'
   schedule:
-    - cron: "0 11 * * *" # 08:00 BRT (UTC-3)
+    - cron: "0 11 * * 1" # segundas 08:00 BRT (UTC-3); semanal porque dispara Docker CI/CD e Deploy (imagem nova no OCIR)
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
