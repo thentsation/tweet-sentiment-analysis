@@ -2,8 +2,6 @@
 
 # Sentiment Analysis and Topic Modeling on COVID-19 Tweets
 
-[![Python CI](https://github.com/ntsation/tweet-sentiment-analysis/actions/workflows/pipeline_python.yaml/badge.svg)](https://github.com/ntsation/tweet-sentiment-analysis/actions/workflows/pipeline_python.yaml)
-
 NLP pipeline combining **dual sentiment annotation** (TextBlob + VADER), **LDA topic modeling with coherence-based k selection** and a **4-model classifier benchmark** over ~179k COVID-19 tweets.
 
 > Full article in [Portuguese](README.pt-br.md).
@@ -92,7 +90,13 @@ docker run --rm -v $(pwd)/reports:/app/reports tweet-sentiment --sample 5000   #
 
 Or via Compose: `docker compose up --build`.
 
-In CI the image is scanned with **Trivy** (CRITICAL/HIGH fail the build) and pushed to **GHCR** with version, `latest` and SHA tags on `main`/releases.
+## CI/CD
+
+CI and deploy run on the platform's Jenkins (`Jenkinsfile` → `appPipeline` from the `platform` Shared Library, repo devops-platform), triggered by webhooks; there are no GitHub Actions.
+
+- **PRs and branches** — contract validation; `docker build --target test` (`ruff check`, `ruff format --check`, `mypy`, `pytest` with ≥95% coverage on Python 3.11 and 3.12, tool versions from `config/requirements-dev.txt`); `pip-audit` on `config/requirements.lock`; Trivy (CRITICAL/HIGH) on the runtime image.
+- **main** — all of the above, then build and a test run of the image (the job must exit 0; nothing stays running), release with python-semantic-release (version, CHANGELOG, tag and GitHub release) and a rebuild of the portfolio. Also rebuilt every Monday to pick up security patches.
+- **Dependencies** — Renovate (Jenkins job `platform/renovate`, `renovate.json` → devops-platform preset): daily updates, weekly lockfile maintenance, Dependency Dashboard issue and auto-merge of patch/minor after Jenkins passes.
 
 ## Repository structure
 
@@ -102,5 +106,4 @@ In CI the image is scanned with **Trivy** (CRITICAL/HIGH fail the build) and pus
 ├── notebooks/             # original exploratory notebook
 ├── data/                  # dataset (179,108 tweets)
 ├── config/                # pinned requirements + lockfile
-└── .github/workflows/     # CI, weekly lockfile update, semantic release
 ```
