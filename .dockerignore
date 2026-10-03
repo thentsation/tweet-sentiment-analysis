@@ -10,7 +10,6 @@ __pycache__
 .env
 .idea
 .vscode
-tests
 docs
 notebooks
 reports
