@@ -2,6 +2,8 @@
 
 # Análise de Sentimento e Modelagem de Tópicos em Tweets sobre COVID-19
 
+[![Python CI](https://github.com/ntsation/tweet-sentiment-analysis/actions/workflows/pipeline_python.yaml/badge.svg)](https://github.com/ntsation/tweet-sentiment-analysis/actions/workflows/pipeline_python.yaml)
+
 Pipeline de NLP que combina **análise de sentimento (TextBlob)**, **modelagem de tópicos (LDA)** e um **classificador Naive Bayes** sobre ~179 mil tweets sobre a pandemia de COVID-19.
 
 > Versão em português deste artigo. [Leia em inglês](README.md).
@@ -95,7 +97,7 @@ O que foi feito para transformar o notebook em um projeto apresentável:
 | Determinismo | Sementes fixas em amostragem, LDA e split; dois runs produzem o mesmo `metrics.json` |
 | Lint e formato | `ruff` via pre-commit e CI |
 | CI (GitHub Actions) | ruff + pytest matrix (3.11/3.12) + mypy + pip-audit + **smoke do pipeline em amostra real** |
-| Docker | Imagem multi-stage non-root com dataset embutido, scan Trivy e execução de teste no Jenkins |
+| Docker | Imagem multi-stage non-root com dataset embutido, scan Trivy e publicação no GHCR |
 | Dependências | Pins exatos, lockfile universal (`uv pip compile`) regenerado semanalmente por workflow |
 | Dependabot | Atualizações diárias de dependências e actions |
 | Release | python-semantic-release com versionamento semântico no `main` |
@@ -139,13 +141,7 @@ docker run --rm -v $(pwd)/reports:/app/reports tweet-sentiment --sample 5000   #
 
 Ou via Compose: `docker compose up --build`.
 
-## CI/CD
-
-CI e deploy rodam no Jenkins da plataforma (`Jenkinsfile` → `appPipeline` da Shared Library `platform`, repo devops-platform), disparados por webhooks. Sem GitHub Actions.
-
-- **PRs e branches** — validação do contrato; `docker build --target test` (`ruff check`, `ruff format --check`, `mypy`, `pytest` com cobertura ≥95% em Python 3.11 e 3.12, versões das ferramentas no `config/requirements-dev.txt`); `pip-audit` no `config/requirements.lock`; Trivy (CRITICAL/HIGH) na imagem de runtime.
-- **main** — tudo acima e depois build e uma execução de teste da imagem (o job precisa terminar com exit 0; nada fica no ar), release com o python-semantic-release (versão, CHANGELOG, tag e release no GitHub) e rebuild do portfolio. Também é reconstruída toda segunda para pegar patches de segurança.
-- **Dependências** — Renovate (job `platform/renovate` no Jenkins, `renovate.json` → preset do devops-platform): atualizações diárias, manutenção semanal do lockfile, issue "Dependency Dashboard" e auto-merge de patch/minor depois que o Jenkins aprova.
+No CI, a imagem é construída, escaneada com **Trivy** (CRITICAL/HIGH falham o build) e publicada no **GHCR** com tags de versão, `latest` e SHA a cada push no `main`/release.
 
 ## Estrutura do repositório
 
@@ -163,7 +159,8 @@ CI e deploy rodam no Jenkins da plataforma (`Jenkinsfile` → `appPipeline` da S
 ├── notebooks/             # notebook exploratório original
 ├── data/                  # dataset (179.108 tweets)
 ├── config/                # requirements pinados + lockfile
-└── docker/                # Dockerfile multi-stage
+├── docker/                # Dockerfile multi-stage
+└── .github/workflows/     # CI, Docker CI/CD, lockfile semanal, release
 ```
 
 ## Roadmap
