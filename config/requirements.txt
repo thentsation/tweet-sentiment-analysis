@@ -1,7 +1,7 @@
 pandas==3.0.6
 scikit-learn==1.9.1
 textblob==0.20.1
-nltk==3.10.3
+nltk==3.10.4
 matplotlib==3.11.2
 seaborn==0.13.2
 wordcloud==1.9.6
