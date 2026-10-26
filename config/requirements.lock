@@ -37,7 +37,7 @@ minio==7.2.20
     # via -r config/requirements.txt
 narwhals==2.25.0
     # via scikit-learn
-nltk==3.10.3
+nltk==3.10.4
     # via
     #   -r config/requirements.txt
     #   textblob
