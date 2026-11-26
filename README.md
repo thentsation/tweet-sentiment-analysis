@@ -118,9 +118,8 @@ The options are those of `src/main.py`: `--input`, `--output`, `--text-column`, 
   the accuracy and the topics are close to the Python ones, not equal (on 5,000 tweets: accuracy 0.659 against 0.635, the
   same shape of report, topics on the same themes).
 * The word clouds are SVG with the words sized by their rank in the topic, not the layout of the `wordcloud` library.
-* On 5,000 tweets the Telvax run takes 114 s against 19 s for Python. Logistic regression, LinearSVC and LDA run their
-  per-document loops in the interpreter; they get native loops in Telvax's standard library next. Loading and the two
-  sentiment scorers are faster than Python's on the whole file: 83 s against 127 s.
+* On the whole file (179,108 tweets), the Telvax run takes 265 s and 754 MB against 352 s and 797 MB for Python, with
+  accuracy 0.7908 against 0.7886. The benchmark ranks the four models in the same order, with macro-F1 within 0.007.
 
 The numbers are checked against the Python code on the same tweets:
 * the cleaned texts, the TextBlob polarity and the VADER compound of every tweet;
