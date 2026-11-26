@@ -1,0 +1,30 @@
+# plot_wordclouds: one SVG per topic with its top words, each as large as its weight in the topic. The layout is a simple
+# one (rows of words, largest first), not the packing of the `wordcloud` library; the words and their sizes are the same.
+
+fn escape(text: Text) -> Text:
+    text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+# The SVG of `words` with their weights, largest first.
+fn svg(title: Text, words: List[Text], weights: List[Float]) -> Text:
+    let width = 800.0
+    var top = 0.0
+    for w in weights:
+        top = std.math.max(top, w)
+    var x = 20.0
+    var y = 70.0
+    var row = 0.0
+    var parts: List[Text] = [f"<text x=\"20\" y=\"32\" font-size=\"20\" font-family=\"sans-serif\" font-weight=\"bold\">{escape(title)}</text>"]
+    var i = 0
+    for word in words:
+        let size = 14.0 + 46.0 * weights.get(i).unwrap() / top
+        let w = size * 0.6 * std.math.to_float(word.chars().len()) + 16.0
+        if x + w > width - 20.0:
+            x = 20.0
+            y = y + row + 12.0
+            row = 0.0
+        row = std.math.max(row, size)
+        parts.push(f"<text x=\"{x:.1f}\" y=\"{y + size:.1f}\" font-size=\"{size:.1f}\" font-family=\"sans-serif\" fill=\"#3b4cc0\">{escape(word)}</text>")
+        x = x + w
+        i = i + 1
+    let height = y + row + 30.0
+    f"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width:.0f}\" height=\"{height:.0f}\" viewBox=\"0 0 {width:.0f} {height:.0f}\"><rect width=\"100%\" height=\"100%\" fill=\"white\"/>{std.text.join(parts, "")}</svg>"

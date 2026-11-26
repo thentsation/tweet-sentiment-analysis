@@ -1,10 +1,12 @@
-# The steps of src/pipeline.py that need no trained model: load, clean, both annotators, their agreement, the daily
-# timeline, the figures and reports/metrics.json. The classifiers and the topics are the hooks at the end of `run`.
+# src/pipeline.py: load, clean, both annotators, their agreement, the daily timeline, the classifier and its benchmark,
+# the LDA topics (and the choice of their number), the figures and reports/metrics.json.
 from tweets import Tweet
 from preprocessing import clean_tweet, preprocess_text
 from textblob import polarity
 from vader import compound
 from sentiment import Agreement, label_agreement, label_from_polarity, label_from_vader_compound
+from models import Evaluation, ModelScore, TopicTuning, train_and_evaluate, benchmark_models, topics, tune_num_topics
+from wordcloud import svg
 
 # The options of src/main.py.
 type Config:
@@ -16,6 +18,8 @@ type Config:
     num_words: Int
     tune_topics: Bool
     seed: Int
+    max_features: Int
+    test_size: Float
 
 # A tweet after cleaning and scoring.
 type Scored:
@@ -34,11 +38,6 @@ type Timeline:
     most_negative_day: Text
     most_positive_day: Text
 
-type ModelScore:
-    model: Text
-    accuracy: Float
-    macro_f1: Float
-
 type Topic:
     topic: Int
     top_words: List[Text]
@@ -49,13 +48,13 @@ type Metrics:
     num_topics: Int
     sample_size: Int?
     random_state: Int
-    accuracy: Float?
-    confusion_matrix: List[List[Int]]?
-    labels: List[Text]?
-    classification_report: Text?
+    accuracy: Float
+    confusion_matrix: List[List[Int]]
+    labels: List[Text]
+    classification_report: Text
     label_agreement: Agreement
     sentiment_timeline: Timeline?
-    topic_coherence: Map[Text, Float]?
+    topic_coherence: TopicTuning?
     model_benchmark: List[ModelScore]
     topics: List[Topic]
 
@@ -128,16 +127,38 @@ fn run(config: Config) -> Result[Metrics, Text]:
     let agreement = label_agreement(rows |> std.iter.map(r => r.sentiment_label), rows |> std.iter.map(r => r.vader_label))?
     let (days, textblob, vader) = daily(rows)
     figures(config.output, rows, days, textblob, vader)?
-    # TODO(learn): the classifier, the benchmark and the topics, when the `learn` package has them:
-    # * train_and_evaluate: learn.text.fit_tfidf with max_df=0.85, bigrams and sublinear tf, learn.bayes.fit_multinomial,
-    #   then std.ml.accuracy, confusion_matrix and classification_report on a std.ml.split of the seed;
-    # * benchmark_models: MultinomialNB and ComplementNB (learn.bayes), LogisticRegression (learn.linear.fit_logistic),
-    #   LinearSVC (learn.svm), sorted by macro-F1 (std.ml.f1 with "macro");
-    # * train_lda, top_words_per_topic and tune_num_topics with UMass coherence: learn.lda;
-    # * the word clouds of the topics, and the MinIO upload (the S3 client of the `aws` package).
-    # Until then those keys are null or empty.
+    let clean = rows |> std.iter.map(r => r.clean_text)
+    let labels = rows |> std.iter.map(r => r.sentiment_label)
+    var tuning: TopicTuning? = None
+    if config.tune_topics:
+        tuning = Some(tune_num_topics(clean, config.max_features, config.num_words, config.seed))
+    let found = topics(clean, config.num_topics, config.max_features, config.num_words, config.seed)
+    let evaluation = train_and_evaluate(clean, labels, config.max_features, config.test_size, config.seed)
+    let benchmark = benchmark_models(clean, labels, config.max_features, config.test_size, config.seed)
+    wordclouds(config.output, found)?
+    var numbered: List[Topic] = []
+    var k = 1
+    for words in found:
+        numbered.push(Topic(topic: k, top_words: words))
+        k = k + 1
     let sample_size = None if config.sample <= 0 else Some(config.sample)
-    Ok(Metrics(tweets_analyzed: std.math.to_int(rows.len()), num_topics: config.num_topics, sample_size: sample_size, random_state: config.seed, accuracy: None, confusion_matrix: None, labels: None, classification_report: None, label_agreement: agreement, sentiment_timeline: summary(days, textblob, vader), topic_coherence: None, model_benchmark: [], topics: []))
+    Ok(Metrics(tweets_analyzed: std.math.to_int(rows.len()), num_topics: config.num_topics, sample_size: sample_size, random_state: config.seed, accuracy: evaluation.accuracy, confusion_matrix: evaluation.confusion_matrix, labels: evaluation.labels, classification_report: evaluation.classification_report, label_agreement: agreement, sentiment_timeline: summary(days, textblob, vader), topic_coherence: tuning, model_benchmark: benchmark, topics: numbered))
+
+# plot_wordclouds: figures/wordclouds/topic_<n>.svg, the words weighted by their rank in the topic.
+fn wordclouds(output: Text, found: List[List[Text]]) -> Result[Int, Text]:
+    let dir = output + "/figures/wordclouds"
+    std.fs.create_dir(dir)?
+    var k = 1
+    for words in found:
+        let n = std.math.to_float(words.len())
+        var weights: List[Float] = []
+        var i = 0.0
+        for w in words:
+            weights.push(n - i)
+            i = i + 1.0
+        std.fs.write(f"{dir}/topic_{k}.svg", svg(f"Topic #{k}", words, weights))?
+        k = k + 1
+    Ok(k - 1)
 
 fn write_metrics(output: Text, m: Metrics) -> Result[Text, Text]:
     std.fs.create_dir(output)?

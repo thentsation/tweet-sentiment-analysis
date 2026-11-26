@@ -1,17 +1,30 @@
 # Sentiment of tweets: the Telvax version of src/main.py. Run it from the repository:
 #   tvpm run main --input ../data/covid19_tweets.csv --output ../reports --sample 5000
 from pipeline import Config, run, write_metrics
+from upload import upload_reports
 
-# Sentiment and topics of tweets (TextBlob, VADER, their agreement and the daily timeline; the classifiers and topics
-# come with the `learn` package).
+# Sentiment and topics of tweets: TextBlob and VADER, their agreement, the daily timeline, a classifier and the benchmark
+# of four, and LDA topics.
 fn main(input: Text = "data/covid19_tweets.csv", output: Text = "reports", text_column: Text = "text", sample: Int = 0, num_topics: Int = 5, num_words: Int = 10, tune_topics: Bool = False, seed: Int = 42) -> Result[Text, Text]:
     if num_topics < 2:
         return Err("num_topics must be at least 2")
     if sample < 0:
         return Err("sample must be positive when given")
-    let config = Config(input: input, output: output, text_column: text_column, sample: sample, num_topics: num_topics, num_words: num_words, tune_topics: tune_topics, seed: seed)
+    let config = Config(input: input, output: output, text_column: text_column, sample: sample, num_topics: num_topics, num_words: num_words, tune_topics: tune_topics, seed: seed, max_features: 3000, test_size: 0.2)
     let m = run(config)?
     let path = write_metrics(output, m)?
     print(f"Tweets analyzed: {m.tweets_analyzed}")
+    print("")
+    for t in m.topics:
+        print(f"Topic #{t.topic}: {std.text.join(t.top_words, " ")}")
+    print("")
+    print(f"Classifier accuracy: {m.accuracy:.4f}")
+    print("")
+    print(m.classification_report)
     print(f"Label agreement (TextBlob, VADER): {m.label_agreement.overall:.4f}")
+    match upload_reports(output)?:
+        case Some(run_id):
+            print(f"Reports sent to MinIO under: {run_id}/")
+        case None:
+            pass
     Ok(f"Reports written to {path}")

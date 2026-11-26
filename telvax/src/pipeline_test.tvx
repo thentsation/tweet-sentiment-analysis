@@ -5,7 +5,7 @@ let CSV = "user_name,user_location,user_description,user_created,user_followers,
 fn test_the_report_has_the_keys_and_values_of_the_python_pipeline():
     std.fs.create_dir("test-output").unwrap()
     std.fs.write("test-output/tweets.csv", CSV).unwrap()
-    let config = Config(input: "test-output/tweets.csv", output: "test-output/reports", text_column: "text", sample: 0, num_topics: 5, num_words: 10, tune_topics: False, seed: 42)
+    let config = Config(input: "test-output/tweets.csv", output: "test-output/reports", text_column: "text", sample: 0, num_topics: 5, num_words: 10, tune_topics: False, seed: 42, max_features: 3000, test_size: 0.2)
     let m = run(config).unwrap()
     # "the of and" is only stop words, so it is left out.
     assert_eq(m.tweets_analyzed, 3)

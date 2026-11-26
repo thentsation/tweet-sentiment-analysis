@@ -1,0 +1,38 @@
+# src/storage.py: every file of the output folder to MinIO under a prefix of the time of the run, with the S3 client of
+# the `aws` package. Nothing happens when MINIO_ENDPOINT, MINIO_ACCESS_KEY and MINIO_SECRET_KEY are not all set.
+from aws.s3 import S3, create_bucket, put_object, head_object
+from aws.sigv4 import Credentials
+
+fn env(name: Text) -> Text:
+    std.env.get(name).unwrap_or("")
+
+fn content_type(path: Text) -> Text:
+    if path.ends_with(".json"):
+        return "application/json"
+    if path.ends_with(".svg"):
+        return "image/svg+xml"
+    "application/octet-stream"
+
+fn upload_reports(output: Text) -> Result[Text?, Text]:
+    let endpoint = env("MINIO_ENDPOINT")
+    let key = env("MINIO_ACCESS_KEY")
+    let secret = env("MINIO_SECRET_KEY")
+    let bucket = "tweet-reports" if env("MINIO_BUCKET").is_empty() else env("MINIO_BUCKET")
+    if endpoint.is_empty() or key.is_empty() or secret.is_empty():
+        return Ok(None)
+    # The Python client is made with secure=False: plain HTTP.
+    let address = endpoint if endpoint.starts_with("http") else "http://" + endpoint
+    let s3 = S3(region: "us-east-1", credentials: Credentials(access_key: key, secret_key: secret, session_token: None), endpoint: address)
+    # make_bucket when the bucket does not exist; one that does is fine.
+    match create_bucket(s3, bucket):
+        case Ok(_):
+            pass
+        case Err(e):
+            if not e.contains("BucketAlreadyOwnedByYou") and not e.contains("BucketAlreadyExists"):
+                return Err(e)
+    let run_id = std.time.format(std.time.now(), "%Y%m%d-%H%M%S")
+    for path in std.fs.walk(output)?:
+        let relative = path.slice(output.chars().len() + 1, path.chars().len())
+        let data = std.fs.read_bytes(path)?
+        put_object(s3, bucket, f"{run_id}/{relative}", data, content_type(path))?
+    Ok(Some(run_id))

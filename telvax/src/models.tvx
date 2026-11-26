@@ -1,0 +1,130 @@
+# src/classifier.py and src/topics.py, on the `learn` package: the classifier and its evaluation, the benchmark of four
+# models, LDA topics, the UMass coherence and the choice of the number of topics.
+from std.sparse import Sparse
+from std.random import Generator
+from learn.text import Options, fit_tfidf_with, fit_counts_with, transform
+from learn.stop_words import english_stop_words
+from learn.bayes import fit_multinomial, fit_complement, predict
+from learn.linear import fit_logistic, predict_logistic
+from learn.svm import fit_svc, predict_svc
+from learn.lda import LDA, fit_lda, top_words
+
+type Evaluation:
+    accuracy: Float
+    labels: List[Text]
+    confusion_matrix: List[List[Int]]
+    classification_report: Text
+
+type ModelScore:
+    model: Text
+    accuracy: Float
+    macro_f1: Float
+
+type TopicTuning:
+    best_num_topics: Int
+    best_coherence: Float
+    scores: Map[Text, Float]
+
+# train_test_split: the rows shuffled with the seed, the first `ceil(test_size * n)` for the test. The rows are not
+# scikit-learn's for the same seed (another generator).
+fn split(n: Int, test_size: Float, seed: Int) -> (List[Int], List[Int]):
+    var order: List[Int] = []
+    for i in range(n):
+        order.push(i)
+    let shuffled = Generator.new(seed).shuffle(order)
+    let n_test = std.math.to_int(std.math.ceil(test_size * std.math.to_float(n)))
+    (shuffled.skip(n_test), shuffled.take(n_test))
+
+fn pick(xs: List[Text], idx: List[Int]) -> List[Text]:
+    idx |> std.iter.map(i => xs.get(i).unwrap())
+
+# build_vectorizer: TfidfVectorizer(max_df=0.85, max_features, ngram_range=(1, 2), sublinear_tf=True).
+fn vectorizer_options(max_features: Int) -> Options:
+    Options(max_features: max_features, max_df: 0.85, min_df: 1, ngram_max: 2, stop_words: [], sublinear_tf: True)
+
+# train_and_evaluate: MultinomialNB on the TF-IDF of the training rows, measured on the test rows.
+fn train_and_evaluate(texts: List[Text], labels: List[Text], max_features: Int, test_size: Float, seed: Int) -> Evaluation:
+    let (train, test) = split(std.math.to_int(texts.len()), test_size, seed)
+    let v = fit_tfidf_with(pick(texts, train), vectorizer_options(max_features))
+    let model = fit_multinomial(transform(v, pick(texts, train)), pick(labels, train), 1.0)
+    let y = pick(labels, test)
+    let p = predict(model, transform(v, pick(texts, test)))
+    let (names, matrix) = std.ml.confusion_matrix(y, p)
+    Evaluation(accuracy: std.ml.accuracy(y, p), labels: names, confusion_matrix: matrix, classification_report: std.ml.classification_report(y, p))
+
+# benchmark_models: MultinomialNB, ComplementNB, LogisticRegression and LinearSVC, best macro-F1 first.
+fn benchmark_models(texts: List[Text], labels: List[Text], max_features: Int, test_size: Float, seed: Int) -> List[ModelScore]:
+    let (train, test) = split(std.math.to_int(texts.len()), test_size, seed)
+    let v = fit_tfidf_with(pick(texts, train), vectorizer_options(max_features))
+    let xtr = transform(v, pick(texts, train))
+    let xte = transform(v, pick(texts, test))
+    let ytr = pick(labels, train)
+    let y = pick(labels, test)
+    let found: List[(Text, List[Text])] = [
+        ("MultinomialNB", predict(fit_multinomial(xtr, ytr, 1.0), xte)),
+        ("ComplementNB", predict(fit_complement(xtr, ytr, 1.0), xte)),
+        ("LogisticRegression", predict_logistic(fit_logistic(xtr, ytr, 1.0, 1000), xte)),
+        ("LinearSVC", predict_svc(fit_svc(xtr, ytr, 1.0, 1000), xte)),
+    ]
+    var scores: List[ModelScore] = found |> std.iter.map(f => ModelScore(model: f.0, accuracy: std.ml.accuracy(y, f.1), macro_f1: std.ml.f1(y, f.1, "macro")))
+    # Best macro-F1 first; equal ones keep their order, as Python's sorted.
+    var out: List[ModelScore] = []
+    while not scores.is_empty():
+        var best = 0
+        for i in range(std.math.to_int(scores.len())):
+            if scores.get(i).unwrap().macro_f1 > scores.get(best).unwrap().macro_f1:
+                best = i
+        out.push(scores.get(best).unwrap())
+        scores = scores.take(best) + scores.skip(best + 1)
+    out
+
+# The CountVectorizer of the topics: max_df=0.85, max_features, the English stop words.
+fn topic_counts(texts: List[Text], max_features: Int) -> (List[Text], Sparse):
+    let o = Options(max_features: max_features, max_df: 0.85, min_df: 1, ngram_max: 1, stop_words: english_stop_words(), sublinear_tf: False)
+    let v = fit_counts_with(texts, o)
+    (v.words, transform(v, texts))
+
+# train_lda and top_words_per_topic.
+fn topics(texts: List[Text], num_topics: Int, max_features: Int, num_words: Int, seed: Int) -> List[List[Text]]:
+    let (words, x) = topic_counts(texts, max_features)
+    top_words(fit_lda(x, num_topics, 10, seed), words, num_words)
+
+# coherence_score: the mean over the pairs of top words of log((D(wi, wj) + 1) / (D(wi) + 1)), D counting documents.
+fn coherence(m: LDA, x: Sparse, words: List[Text], num_words: Int) -> Float:
+    let df = x.col_counts()
+    let index: Map[Text, Int] = std.map.new()
+    var i = 0
+    for w in words:
+        index.insert(w, i)
+        i = i + 1
+    var total = 0.0
+    var pairs = 0
+    for top in top_words(m, words, num_words):
+        let ids = top |> std.iter.map(w => index.get(w).unwrap())
+        let n = std.math.to_int(ids.len())
+        for a in range(n):
+            let wi = ids.get(a).unwrap()
+            let di = df.get(wi).unwrap()
+            if di == 0:
+                continue
+            for b in range(a + 1, n):
+                let both = x.select_cols([wi, ids.get(b).unwrap()]).row_counts().filter(c => c == 2).len()
+                total = total + std.math.ln((std.math.to_float(both) + 1.0) / (std.math.to_float(di) + 1.0))
+                pairs = pairs + 1
+    total / std.math.to_float(pairs) if pairs > 0 else 0.0
+
+# tune_num_topics: the coherence of 3, 5, 7 and 10 topics, and the best.
+fn tune_num_topics(texts: List[Text], max_features: Int, num_words: Int, seed: Int) -> TopicTuning:
+    let (words, x) = topic_counts(texts, max_features)
+    let scores: Map[Text, Float] = std.map.new()
+    var best = 0
+    var best_score = -1.0e308
+    for k in [3, 5, 7, 10]:
+        if k >= x.rows():
+            continue
+        let s = coherence(fit_lda(x, k, 10, seed), x, words, num_words)
+        scores.insert(f"{k}", s)
+        if s > best_score:
+            best_score = s
+            best = k
+    TopicTuning(best_num_topics: best, best_coherence: best_score, scores: scores)

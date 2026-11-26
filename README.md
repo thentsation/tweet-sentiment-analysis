@@ -96,9 +96,12 @@ In CI the image is scanned with **Trivy** (CRITICAL/HIGH fail the build) and pus
 
 ## Telvax version
 
-`telvax/` has the pipeline written in [Telvax](https://github.com/telvax/telvax). It covers loading, cleaning (`clean_tweet`
-and `preprocess_text`, with NLTK's English stop words), TextBlob polarity and NLTK's VADER, the agreement of their
-labels, the daily timeline, the two figures (as SVG) and `reports/metrics.json` with the same keys.
+`telvax/` has the whole pipeline written in [Telvax](https://github.com/telvax/telvax):
+* loading and cleaning (`clean_tweet` and `preprocess_text`, with NLTK's English stop words);
+* TextBlob polarity and NLTK's VADER, the agreement of their labels, and the daily timeline;
+* the classifier, the benchmark of four models, the LDA topics (and `--tune-topics`) and the word clouds, with the packages
+  [`learn`](https://github.com/telvax/learn) and [`aws`](https://github.com/telvax/aws) (the MinIO upload);
+* the figures (as SVG) and `reports/metrics.json` with the same keys.
 
 ```sh
 cd telvax
@@ -111,9 +114,13 @@ The options are those of `src/main.py`: `--input`, `--output`, `--text-column`, 
 `--num-words`, `--tune-topics`, `--seed`. Three differences:
 * A sample is drawn with the seed by Telvax's generator, so it has other tweets than pandas' `sample`.
 * The figures are SVG.
-* The classifier, the benchmark, the topics and the word clouds wait for the models of the `learn` package of Telvax
-  (`telvax/learn`), so `accuracy`, `confusion_matrix`, `labels`, `classification_report` and `topic_coherence` are
-  `null` and `model_benchmark` and `topics` are empty.
+* The models are those of `learn`, checked against scikit-learn there. The split and the LDA start use Telvax's generator, so
+  the accuracy and the topics are close to the Python ones, not equal (on 5,000 tweets: accuracy 0.659 against 0.635, the
+  same shape of report, topics on the same themes).
+* The word clouds are SVG with the words sized by their rank in the topic, not the layout of the `wordcloud` library.
+* On 5,000 tweets the Telvax run takes 114 s against 19 s for Python. Logistic regression, LinearSVC and LDA run their
+  per-document loops in the interpreter; they get native loops in Telvax's standard library next. Loading and the two
+  sentiment scorers are faster than Python's on the whole file: 83 s against 127 s.
 
 The numbers are checked against the Python code on the same tweets:
 * the cleaned texts, the TextBlob polarity and the VADER compound of every tweet;
