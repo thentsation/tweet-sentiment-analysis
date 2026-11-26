@@ -1,0 +1,238 @@
+# VADER as NLTK 3.10.4 has it (nltk.sentiment.vader), which is what src/sentiment.py calls: NLTK's lexicon, its way of
+# taking punctuation off words, no emoji translation, its idioms and "never so" rules. It differs from the
+# `vaderSentiment` package (and from the LeIA port of sentiment-analysis-api, which follows that package) on about 5% of
+# the tweets, so it is written here from NLTK's code. Hutto & Gilbert (2014); the lexicon is MIT-licensed (data/NOTICE.md).
+from pysum import python_sum
+
+let B_INCR = 0.293
+let B_DECR = -0.293
+let C_INCR = 0.733
+let N_SCALAR = -0.74
+
+let LEXICON: Map[Text, Float] = lexicon(std.fs.embed("data/vader_lexicon.txt"))
+
+let NEGATE: List[Text] = ["aint", "arent", "cannot", "cant", "couldnt", "darent", "didnt", "doesnt", "ain't", "aren't", "can't", "couldn't", "daren't", "didn't", "doesn't", "dont", "hadnt", "hasnt", "havent", "isnt", "mightnt", "mustnt", "neither", "don't", "hadn't", "hasn't", "haven't", "isn't", "mightn't", "mustn't", "neednt", "needn't", "never", "none", "nope", "nor", "not", "nothing", "nowhere", "oughtnt", "shant", "shouldnt", "uhuh", "wasnt", "werent", "oughtn't", "shan't", "shouldn't", "uh-uh", "wasn't", "weren't", "without", "wont", "wouldnt", "won't", "wouldn't", "rarely", "seldom", "despite"]
+
+let BOOSTERS: Map[Text, Float] = boosters()
+
+let IDIOMS: Map[Text, Float] = {"the shit": 3.0, "the bomb": 3.0, "bad ass": 1.5, "yeah right": -2.0, "cut the mustard": 2.0, "kiss of death": -1.5, "hand to mouth": -2.0}
+
+let PUNC_LIST: List[Text] = [".", "!", "?", ",", ";", ":", "-", "'", "\"", "!!", "!!!", "??", "???", "?!?", "!?!", "?!?!", "!?!?"]
+
+# Python's `string.punctuation`, as the character class of a regular expression.
+let PUNCTUATION = "[!\"#$%&'()*+,\\-./:;<=>?@\\[\\\\\\]^_`{|}~]"
+
+fn boosters() -> Map[Text, Float]:
+    let m: Map[Text, Float] = std.map.new()
+    for w in ["absolutely", "amazingly", "awfully", "completely", "considerably", "decidedly", "deeply", "effing", "enormously", "entirely", "especially", "exceptionally", "extremely", "fabulously", "flipping", "flippin", "fricking", "frickin", "frigging", "friggin", "fully", "fucking", "greatly", "hella", "highly", "hugely", "incredibly", "intensely", "majorly", "more", "most", "particularly", "purely", "quite", "really", "remarkably", "so", "substantially", "thoroughly", "totally", "tremendously", "uber", "unbelievably", "unusually", "utterly", "very"]:
+        m.insert(w, B_INCR)
+    for w in ["almost", "barely", "hardly", "just enough", "kind of", "kinda", "kindof", "kind-of", "less", "little", "marginally", "occasionally", "partly", "scarcely", "slightly", "somewhat", "sort of", "sorta", "sortof", "sort-of"]:
+        m.insert(w, B_DECR)
+    m
+
+fn lexicon(text: Text) -> Map[Text, Float]:
+    let m: Map[Text, Float] = std.map.new()
+    for line in text.split("\n"):
+        let parts = line.trim().split("\t")
+        if parts.len() >= 2:
+            m.insert(parts.get(0).unwrap(), parts.get(1).unwrap().to_float().unwrap())
+    m
+
+# Python's `str.isupper()`: a cased character, and none in lower case.
+fn is_upper(w: Text) -> Bool:
+    w.to_uppercase() == w and w.to_lowercase() != w
+
+fn size(t: Text) -> Int:
+    std.math.to_int(t.chars().len())
+
+fn split_ws(text: Text) -> List[Text]:
+    std.text.replace_all(text, "[\\s\\x1c-\\x1f]+", " ").trim().split(" ").filter(w => not w.is_empty())
+
+# SentiText._words_and_emoticons: the words of more than one character, with one mark of PUNC_LIST taken off the
+# front or the back when what is left is a word of the text without punctuation.
+fn words_and_emoticons(text: Text) -> List[Text]:
+    let plain: Map[Text, Bool] = std.map.new()
+    for w in split_ws(std.text.replace_all(text, PUNCTUATION, "")):
+        if size(w) > 1:
+            plain.insert(w, True)
+    let out: List[Text] = []
+    for we in split_ws(text):
+        if size(we) <= 1:
+            continue
+        var mapped = we
+        for p in PUNC_LIST:
+            if we.ends_with(p) and plain.contains_key(we.slice(0, size(we) - size(p))):
+                mapped = we.slice(0, size(we) - size(p))
+            elif we.starts_with(p) and plain.contains_key(we.slice(size(p), size(we))):
+                mapped = we.slice(size(p), size(we))
+        out.push(mapped)
+    out
+
+fn cap_differential(words: List[Text]) -> Bool:
+    var caps = 0
+    for w in words:
+        if is_upper(w):
+            caps = caps + 1
+    let diff = size_of(words) - caps
+    diff > 0 and diff < size_of(words)
+
+fn size_of(xs: List[Text]) -> Int:
+    std.math.to_int(xs.len())
+
+fn at(xs: List[Text], i: Int) -> Text:
+    xs.get(i).unwrap()
+
+fn negated_word(word: Text) -> Bool:
+    let w = word.to_lowercase()
+    NEGATE.contains(w) or w.contains("n't")
+
+fn scalar_inc_dec(word: Text, valence: Float, cap_diff: Bool) -> Float:
+    let lower = word.to_lowercase()
+    match BOOSTERS.get(lower):
+        case Some(b):
+            var scalar = b
+            if valence < 0.0:
+                scalar = scalar * -1.0
+            if is_upper(word) and cap_diff:
+                if valence > 0.0:
+                    scalar = scalar + C_INCR
+                else:
+                    scalar = scalar - C_INCR
+            scalar
+        case None:
+            0.0
+
+fn never_check(valence: Float, w: List[Text], start_i: Int, i: Int) -> Float:
+    if start_i == 0:
+        if negated_word(at(w, i - 1)):
+            return valence * N_SCALAR
+        return valence
+    if start_i == 1:
+        if at(w, i - 2) == "never" and (at(w, i - 1) == "so" or at(w, i - 1) == "this"):
+            return valence * 1.5
+        if negated_word(at(w, i - 2)):
+            return valence * N_SCALAR
+        return valence
+    if (at(w, i - 3) == "never" and (at(w, i - 2) == "so" or at(w, i - 2) == "this")) or (at(w, i - 1) == "so" or at(w, i - 1) == "this"):
+        return valence * 1.25
+    if negated_word(at(w, i - 3)):
+        return valence * N_SCALAR
+    valence
+
+fn idioms_check(valence: Float, w: List[Text], i: Int) -> Float:
+    var v = valence
+    let onezero = at(w, i - 1) + " " + at(w, i)
+    let twoonezero = at(w, i - 2) + " " + at(w, i - 1) + " " + at(w, i)
+    let twoone = at(w, i - 2) + " " + at(w, i - 1)
+    let threetwoone = at(w, i - 3) + " " + at(w, i - 2) + " " + at(w, i - 1)
+    let threetwo = at(w, i - 3) + " " + at(w, i - 2)
+    for seq in [onezero, twoonezero, twoone, threetwoone, threetwo]:
+        match IDIOMS.get(seq):
+            case Some(x):
+                v = x
+                break
+            case None:
+                pass
+    let n = size_of(w)
+    if n - 1 > i:
+        match IDIOMS.get(at(w, i) + " " + at(w, i + 1)):
+            case Some(x):
+                v = x
+            case None:
+                pass
+    if n - 1 > i + 1:
+        match IDIOMS.get(at(w, i) + " " + at(w, i + 1) + " " + at(w, i + 2)):
+            case Some(x):
+                v = x
+            case None:
+                pass
+    if BOOSTERS.contains_key(threetwo) or BOOSTERS.contains_key(twoone):
+        v = v + B_DECR
+    v
+
+fn least_check(valence: Float, w: List[Text], i: Int) -> Float:
+    if i > 1 and not LEXICON.contains_key(at(w, i - 1).to_lowercase()) and at(w, i - 1).to_lowercase() == "least":
+        if at(w, i - 2).to_lowercase() != "at" and at(w, i - 2).to_lowercase() != "very":
+            return valence * N_SCALAR
+        return valence
+    if i > 0 and not LEXICON.contains_key(at(w, i - 1).to_lowercase()) and at(w, i - 1).to_lowercase() == "least":
+        return valence * N_SCALAR
+    valence
+
+fn sentiment_valence(w: List[Text], cap_diff: Bool, item: Text, i: Int) -> Float:
+    match LEXICON.get(item.to_lowercase()):
+        case None:
+            0.0
+        case Some(base):
+            var valence = base
+            if is_upper(item) and cap_diff:
+                if valence > 0.0:
+                    valence = valence + C_INCR
+                else:
+                    valence = valence - C_INCR
+            for start_i in range(3):
+                if i > start_i and not LEXICON.contains_key(at(w, i - (start_i + 1)).to_lowercase()):
+                    var s = scalar_inc_dec(at(w, i - (start_i + 1)), valence, cap_diff)
+                    if start_i == 1 and s != 0.0:
+                        s = s * 0.95
+                    if start_i == 2 and s != 0.0:
+                        s = s * 0.9
+                    valence = valence + s
+                    valence = never_check(valence, w, start_i, i)
+                    if start_i == 2:
+                        valence = idioms_check(valence, w, i)
+            least_check(valence, w, i)
+
+fn count(text: Text, c: Text) -> Int:
+    size_of(text.split(c)) - 1
+
+# Python's `round(x, 4)`: the nearest of the decimals the float is written with.
+fn round4(x: Float) -> Float:
+    f"{x:.4f}".to_float().unwrap()
+
+# The compound score, rounded to 4 decimals as NLTK gives it.
+fn compound(text: Text) -> Float:
+    let w = words_and_emoticons(text)
+    let cap_diff = cap_differential(w)
+    let first: Map[Text, Int] = std.map.new()
+    var idx = 0
+    for t in w:
+        if not first.contains_key(t):
+            first.insert(t, idx)
+        idx = idx + 1
+    var sentiments: List[Float] = []
+    for item in w:
+        let i = first.get(item).unwrap()
+        let lower = item.to_lowercase()
+        if (i < size_of(w) - 1 and lower == "kind" and at(w, i + 1).to_lowercase() == "of") or BOOSTERS.contains_key(lower):
+            sentiments.push(0.0)
+            continue
+        sentiments.push(sentiment_valence(w, cap_diff, item, i))
+    # but_check: the words before the first "but" count half, the ones after one and a half.
+    var bi = -1
+    var k = 0
+    for t in w:
+        if bi < 0 and t.to_lowercase() == "but":
+            bi = k
+        k = k + 1
+    if bi >= 0:
+        var j = 0
+        for s in sentiments:
+            if j < bi:
+                sentiments[j] = s * 0.5
+            elif j > bi:
+                sentiments[j] = s * 1.5
+            j = j + 1
+    if sentiments.is_empty():
+        return 0.0
+    var sum = python_sum(sentiments)
+    let ep = std.math.min(count(text, "!"), 4)
+    let qm = count(text, "?")
+    var amp = std.math.to_float(ep) * 0.292
+    if qm > 1:
+        amp = amp + (std.math.to_float(qm) * 0.18 if qm <= 3 else 0.96)
+    if sum > 0.0:
+        sum = sum + amp
+    elif sum < 0.0:
+        sum = sum - amp
+    round4(sum / std.math.sqrt(sum * sum + 15.0))

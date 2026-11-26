@@ -1,0 +1,46 @@
+# The labels of src/sentiment.py and how often the two annotators agree.
+from textblob import polarity
+from vader import compound
+
+let VADER_THRESHOLD = 0.05
+
+# TextBlob's polarity: positive above 0, negative below.
+fn label_from_polarity(p: Float) -> Text:
+    if p > 0.0:
+        return "positive"
+    if p < 0.0:
+        return "negative"
+    "neutral"
+
+# VADER's compound score: positive from 0.05, negative from -0.05.
+fn label_from_vader_compound(c: Float) -> Text:
+    if c >= VADER_THRESHOLD:
+        return "positive"
+    if c <= -VADER_THRESHOLD:
+        return "negative"
+    "neutral"
+
+type Agreement:
+    overall: Float
+    by_label: Map[Text, Float]
+
+# The share of rows where both labels agree, overall and for each label of `a` (as label_agreement).
+fn label_agreement(a: List[Text], b: List[Text]) -> Result[Agreement, Text]:
+    if a.len() != b.len():
+        return Err("the two lists of labels must be as long")
+    let total: Map[Text, Int] = std.map.new()
+    let same: Map[Text, Int] = std.map.new()
+    var agree = 0
+    var i = 0
+    for x in a:
+        let y = b.get(i).unwrap()
+        total.insert(x, total.get(x).unwrap_or(0) + 1)
+        if x == y:
+            agree = agree + 1
+            same.insert(x, same.get(x).unwrap_or(0) + 1)
+        i = i + 1
+    let by_label: Map[Text, Float] = std.map.new()
+    for label, n in total.entries():
+        by_label.insert(label, std.math.to_float(same.get(label).unwrap_or(0)) / std.math.to_float(n))
+    let overall = std.math.to_float(agree) / std.math.to_float(std.math.max(std.math.to_int(a.len()), 1))
+    Ok(Agreement(overall: overall, by_label: by_label))

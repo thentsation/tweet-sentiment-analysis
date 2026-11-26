@@ -1,0 +1,6 @@
+[package]
+name = "tweet_sentiment"
+version = "0.1.0"
+edition = "2026"
+description = "Sentiment of COVID-19 tweets: the Telvax version of this repository's pipeline"
+entry = "src/main.tvx"

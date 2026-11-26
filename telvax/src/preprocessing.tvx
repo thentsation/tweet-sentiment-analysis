@@ -1,0 +1,47 @@
+# The cleaning of src/preprocessing.py. Python's `re` and Rust's regular expressions disagree on what `\w`, `\s` and `\b`
+# match (Python's `\w` has no combining marks, such as the variation selector after an emoji; Python's `\s` has the
+# characters U+001C to U+001F), so the patterns spell out Python's classes.
+
+# Python's `\w` and `\s` for text.
+let W = "[\\p{L}\\p{N}_]"
+let S = "[\\s\\x1c-\\x1f]"
+
+let STOPWORDS: Map[Text, Bool] = stopwords(std.fs.embed("data/stopwords_english.txt"))
+
+fn stopwords(text: Text) -> Map[Text, Bool]:
+    let out: Map[Text, Bool] = std.map.new()
+    for line in text.lines():
+        let w = line.trim()
+        if not w.is_empty():
+            out.insert(w, True)
+    out
+
+# `^\s*rt\b[: ]?` without the look-ahead of `\b`: `rt` then `:` or a space (taken), or the end, or another character
+# that is not a word character (kept).
+fn drop_retweet(text: Text) -> Text:
+    let start = "(?i)^" + S + "*rt"
+    if std.text.matches(text, start + "[: ]"):
+        return std.text.replace_all(text, start + "[: ]", " ")
+    if std.text.matches(text, start + "$"):
+        return " "
+    std.text.replace_all(text, start + "([^\\p{L}\\p{N}_])", " $1")
+
+# clean_tweet: links, mentions and a leading "RT" become spaces, `#tag` becomes `tag`, and runs of whitespace one space.
+fn clean_tweet(text: Text) -> Text:
+    var t = std.text.replace_all(text, "https?://[^\\s\\x1c-\\x1f]+|www\\.[^\\s\\x1c-\\x1f]+", " ")
+    t = std.text.replace_all(t, "@" + W + "+", " ")
+    t = drop_retweet(t)
+    t = std.text.replace_all(t, "#(" + W + "+)", "$1")
+    std.text.replace_all(t, S + "+", " ").trim()
+
+# Python's `str.split()`: the parts between runs of whitespace.
+fn words(text: Text) -> List[Text]:
+    std.text.replace_all(text, S + "+", " ").trim().split(" ").filter(w => not w.is_empty())
+
+# preprocess_text: the cleaned text in lower case, without the English stop words of NLTK.
+fn preprocess_text(text: Text) -> Text:
+    let kept: List[Text] = []
+    for w in words(clean_tweet(text).to_lowercase()):
+        if not STOPWORDS.contains_key(w):
+            kept.push(w)
+    std.text.join(kept, " ")

@@ -1,0 +1,17 @@
+# Arithmetic as Python does it, where the ported code depends on the last bit.
+
+# Python's `sum()` of floats, which since 3.12 adds with Neumaier's compensation: 0.6 + 1.7 - 2.3 is 1.1e-16, not 0, and
+# that decides whether the "!" of a text counts.
+fn python_sum(xs: List[Float]) -> Float:
+    var total = 0.0
+    var c = 0.0
+    for x in xs:
+        let t = total + x
+        if std.math.abs(total) >= std.math.abs(x):
+            c = c + ((total - t) + x)
+        else:
+            c = c + ((x - t) + total)
+        total = t
+    if c != 0.0:
+        total = total + c
+    total

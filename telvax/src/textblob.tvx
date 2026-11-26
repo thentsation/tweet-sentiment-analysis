@@ -1,0 +1,319 @@
+# TextBlob's polarity (TextBlob(text).sentiment.polarity, textblob 0.20.1), which is the analyzer of the `pattern`
+# library: its tokenizer, the adjective lexicon data/en-sentiment.xml (averaged per word, and "-ly" adverbs made from the
+# adjectives), modifiers, negation, "!" and emoticons. Ported from textblob/_text.py and textblob/en/__init__.py (BSD);
+# the lexicon is by Tom De Smedt and Walter Daelemans under the PDDL (data/NOTICE.md).
+from pysum import python_sum
+
+# A word of the lexicon: its averaged scores, and whether it can modify the next word (it has an adverb sense).
+type Entry:
+    polarity: Float
+    intensity: Float
+    adverb: Bool
+
+let LEXICON: Map[Text, Entry] = load(std.fs.embed("data/en-sentiment.xml"))
+
+let NEGATIONS: List[Text] = ["no", "not", "n't", "never"]
+
+# PUNCTUATION of pattern: tested with `in` as a text, so a token that is a piece of it does not count as an emoticon.
+let PUNCTUATION = ".,;:!?()[]{}`''\"@#$^&*+-|=~_"
+
+let REPLACE_KEYS: List[Text] = ["'d", "'m", "'s", "'ll", "'re", "'ve", "n't"]
+let REPLACE_WITH: List[Text] = [" 'd", " 'm", " 's", " 'll", " 're", " 've", " n't"]
+
+let ABBREVIATIONS: List[Text] = ["a.", "adj.", "adv.", "al.", "a.m.", "c.", "cf.", "comp.", "conf.", "def.", "ed.", "e.g.", "esp.", "etc.", "ex.", "f.", "fig.", "gen.", "id.", "i.e.", "int.", "l.", "m.", "Med.", "Mil.", "Mr.", "n.", "n.q.", "orig.", "pl.", "pred.", "pres.", "p.m.", "ref.", "v.", "vs.", "w/"]
+
+# The emoticons with their polarity, in the order of the source.
+let EMOTICON_SCORES: List[Float] = [1.0, 1.0, 0.75, 0.5, 0.25, 0.05, -0.25, -0.75, -1.0]
+# A backslash: two texts ending in `\\"` on one line do not parse (a gap of the lexer of Telvax).
+let BS = "\\"
+
+let EMOTICONS: List[List[Text]] = emoticons()
+
+# The emoticons of pattern, one list per polarity (each list on its own line: the whole table on one line does not parse).
+fn emoticons() -> List[List[Text]]:
+    var out: List[List[Text]] = []
+    out.push(["<3", "♥"])
+    out.push([">:D", ":-D", ":D", "=-D", "=D", "X-D", "x-D", "XD", "xD", "8-D"])
+    out.push([">:P", ":-P", ":P", ":-p", ":p", ":-b", ":b", ":c)", ":o)", ":^)"])
+    out.push([">:)", ":-)", ":)", "=)", "=]", ":]", ":}", ":>", ":3", "8)", "8-)"])
+    out.push([">;]", ";-)", ";)", ";-]", ";]", ";D", ";^)", "*-)", "*)"])
+    out.push([">:o", ":-O", ":O", ":o", ":-o", "o_O", "o.O", "°O°", "°o°"])
+    out.push([">:/", ":-/", ":/", ":" + BS, ">:" + BS, ":-.", ":-s", ":s", ":S", ":-S", ">.>"])
+    out.push([">:[", ":-(", ":(", "=(", ":-[", ":[", ":{", ":-<", ":c", ":-c", "=/"])
+    out.push([":'(", ":'''(", ";'("])
+    out
+
+let EMOTICON_PATTERN = emoticon_pattern()
+
+let EOS = "END-OF-SENTENCE"
+
+fn size(t: Text) -> Int:
+    std.math.to_int(t.chars().len())
+
+fn attr(line: Text, name: Text, default: Text) -> Text:
+    let found = std.text.find_all(line, " " + name + "=\"[^\"]*\"")
+    if found.is_empty():
+        return default
+    let v = found.get(0).unwrap()
+    v.slice(size(name) + 3, size(v) - 1)
+
+fn number(text: Text) -> Float:
+    text.to_float().unwrap_or(0.0)
+
+# The mean of each of the three scores of a list of (polarity, subjectivity, intensity), as pattern's `avg`, which
+# adds with Python's `sum()`.
+fn mean3(xs: List[List[Float]]) -> List[Float]:
+    var out: List[Float] = []
+    for k in range(3):
+        out.push(python_sum(xs |> std.iter.map(x => x.get(k).unwrap())) / std.math.to_float(xs.len()))
+    out
+
+# Sentiment.load of pattern: every sense of a word averaged per part of speech, then the parts of speech averaged in the
+# order they first appear; then, as textblob/en does, an adverb "-ly" for every adjective (terrible -> terribly).
+fn load(xml: Text) -> Map[Text, Entry]:
+    var order: List[Text] = []
+    let senses: Map[Text, List[List[Float]]] = std.map.new()
+    let tags: Map[Text, List[Text]] = std.map.new()
+    for line in xml.lines():
+        if not line.starts_with("<word "):
+            continue
+        let form = attr(line, "form", "")
+        if form.is_empty():
+            continue
+        let pos = attr(line, "pos", "<none>")
+        let psi = [number(attr(line, "polarity", "0.0")), number(attr(line, "subjectivity", "0.0")), number(attr(line, "intensity", "1.0"))]
+        if not tags.contains_key(form):
+            order.push(form)
+            tags.insert(form, [])
+        let key = form + "\t" + pos
+        if not senses.contains_key(key):
+            senses.insert(key, [])
+            tags.get(form).unwrap().push(pos)
+        senses.get(key).unwrap().push(psi)
+    let averaged: Map[Text, List[Float]] = std.map.new()
+    let out: Map[Text, Entry] = std.map.new()
+    for form in order:
+        var per_pos: List[List[Float]] = []
+        for pos in tags.get(form).unwrap():
+            let m = mean3(senses.get(form + "\t" + pos).unwrap())
+            averaged.insert(form + "\t" + pos, m)
+            per_pos.push(m)
+        let all = mean3(per_pos)
+        out.insert(form, Entry(polarity: all.get(0).unwrap(), intensity: all.get(2).unwrap(), adverb: tags.get(form).unwrap().contains("RB")))
+    for form in order:
+        match averaged.get(form + "\tJJ"):
+            case Some(jj):
+                var w = form
+                if w.ends_with("y"):
+                    w = w.slice(0, size(w) - 1) + "i"
+                if w.ends_with("le"):
+                    w = w.slice(0, size(w) - 2)
+                out.insert(w + "ly", Entry(polarity: jj.get(0).unwrap(), intensity: jj.get(2).unwrap(), adverb: True))
+            case None:
+                pass
+    out
+
+fn escape(c: Text) -> Text:
+    if ".^$*+?()[]{}|\\-#&~".contains(c):
+        return "\\" + c
+    c
+
+# RE_EMOTICONS of pattern: an emoticon with an optional space between its characters, then a space or the end.
+fn emoticon_pattern() -> Text:
+    var alts: List[Text] = []
+    for group in EMOTICONS:
+        for e in group:
+            alts.push(std.text.join(e.chars() |> std.iter.map(c => escape(c)), " ?"))
+    "(" + std.text.join(alts, "|") + ")($|\\s)"
+
+fn occurrences(xs: List[Text], x: Text) -> Int:
+    var n = 0
+    for v in xs:
+        if v == x:
+            n = n + 1
+    n
+
+fn starts_punct(t: Text, punct: Text) -> Bool:
+    not t.is_empty() and punct.contains(t.slice(0, 1))
+
+fn ends_punct(t: Text, punct: Text) -> Bool:
+    not t.is_empty() and punct.contains(t.slice(size(t) - 1, size(t)))
+
+fn is_abbreviation(t: Text) -> Bool:
+    ABBREVIATIONS.contains(t) or std.text.matches(t, "^[A-Za-z]\\.$") or std.text.matches(t, "^([A-Za-z]\\.)+$") or std.text.matches(t, "^[A-Z][b|c|d|f|g|h|j|k|l|m|n|p|q|r|s|t|v|w|x|z]+.$")
+
+fn rstrip_dots(t: Text) -> Text:
+    var s = t
+    while s.ends_with("."):
+        s = s.slice(0, size(s) - 1)
+    s
+
+# `pattern.find_tokens`: the sentences of a text, each a text of tokens separated by spaces.
+fn find_tokens(raw: Text) -> List[Text]:
+    # Every character of PUNCTUATION but the period.
+    let punct = ",;:!?()[]{}`'\"@#$^&*+-|=~_"
+    var s = raw
+    var r = 0
+    for key in REPLACE_KEYS:
+        s = s.replace(key, REPLACE_WITH.get(r).unwrap())
+        r = r + 1
+    s = s.replace("“", " “ ").replace("”", " ” ").replace("‘", " ‘ ").replace("’", " ’ ").replace("'", " ' ").replace("\"", " \" ")
+    s = s.replace("\r\n", "\n")
+    s = std.text.replace_all(s, "\\n{2,}", " " + EOS + " ")
+    s = std.text.replace_all(s, "[\\s\\x1c-\\x1f]+", " ")
+    var tokens: List[Text] = []
+    for t0 in s.split(" "):
+        var t = t0
+        if t.is_empty():
+            continue
+        var tail: List[Text] = []
+        while starts_punct(t, punct) and not REPLACE_KEYS.contains(t):
+            tokens.push(t.slice(0, 1))
+            t = t.slice(1, size(t))
+        while (ends_punct(t, punct) or t.ends_with(".")) and not REPLACE_KEYS.contains(t):
+            if ends_punct(t, punct):
+                tail.push(t.slice(size(t) - 1, size(t)))
+                t = t.slice(0, size(t) - 1)
+            if t.ends_with("..."):
+                tail.push("...")
+                t = rstrip_dots(t.slice(0, size(t) - 3))
+            if t.ends_with("."):
+                if is_abbreviation(t):
+                    break
+                tail.push(".")
+                t = t.slice(0, size(t) - 1)
+        if not t.is_empty():
+            tokens.push(t)
+        tail.reverse()
+        for x in tail:
+            tokens.push(x)
+    # Sentences end at ... . ! ? with the quotes, brackets and marks that follow them.
+    let ends = ["...", ".", "!", "?", EOS]
+    let follow = ["'", "\"", "”", "’", "...", ".", "!", "?", ")", EOS]
+    var sentences: List[List[Text]] = [[]]
+    let n = std.math.to_int(tokens.len())
+    var i = 0
+    var j = 0
+    while j < n:
+        if ends.contains(tokens.get(j).unwrap()):
+            while j < n and follow.contains(tokens.get(j).unwrap()):
+                let tok = tokens.get(j).unwrap()
+                if (tok == "'" or tok == "\"") and occurrences(sentences.last().unwrap(), tok) % 2 == 0:
+                    break
+                j = j + 1
+            let current = sentences.last().unwrap()
+            for t in tokens.slice(i, j):
+                if t != EOS:
+                    current.push(t)
+            sentences.push([])
+            i = j
+        j = j + 1
+    let last = sentences.last().unwrap()
+    for t in tokens.slice(i, std.math.min(j, n)):
+        last.push(t)
+    var out: List[Text] = []
+    for sentence in sentences:
+        if sentence.is_empty():
+            continue
+        var text = std.text.join(sentence, " ")
+        text = std.text.replace_all(text, "\\( ?! ?\\)", "(!)")
+        out.push(join_emoticons(text))
+    out
+
+# RE_EMOTICONS.sub(lambda m: m.group(1).replace(" ", "") + m.group(2)): the spaces inside an emoticon are taken out.
+fn join_emoticons(text: Text) -> Text:
+    let marked = std.text.replace_all(text, EMOTICON_PATTERN, "$1$2")
+    let parts = marked.split("")
+    var out = parts.get(0).unwrap()
+    for p in parts.skip(1):
+        let inner = p.split("")
+        out = out + inner.get(0).unwrap().replace(" ", "") + std.text.join(inner.skip(1), "")
+    out
+
+fn clamp(x: Float) -> Float:
+    std.math.max(-1.0, std.math.min(x, 1.0))
+
+fn is_alpha(w: Text) -> Bool:
+    std.text.matches(w, "^\\p{L}+$")
+
+fn strip_quotes(w: Text) -> Text:
+    var s = w
+    while s.starts_with("'"):
+        s = s.slice(1, size(s))
+    while s.ends_with("'"):
+        s = s.slice(0, size(s) - 1)
+    s
+
+fn emoticon_score(w: Text) -> Float?:
+    var g = 0
+    for group in EMOTICONS:
+        for e in group:
+            if e.to_lowercase() == w:
+                return Some(EMOTICON_SCORES.get(g).unwrap())
+        g = g + 1
+    None
+
+# The polarity of a text, from -1 to 1: the mean of the scores of the words of the lexicon and the emoticons in it.
+fn polarity(text: Text) -> Float:
+    let words = std.text.join(find_tokens(text), " ").split(" ").filter(w => not w.is_empty()) |> std.iter.map(w => w.to_lowercase())
+    var p: List[Float] = []
+    var intensity: List[Float] = []
+    var negated: List[Bool] = []
+    var modifier = ""
+    var has_modifier = False
+    var negation = False
+    for w in words:
+        match LEXICON.get(w):
+            case Some(e):
+                let last = std.math.to_int(p.len()) - 1
+                if not has_modifier:
+                    p.push(e.polarity)
+                    intensity.push(e.intensity)
+                    negated.push(False)
+                else:
+                    p[last] = clamp(e.polarity * intensity.get(last).unwrap())
+                    intensity[last] = e.intensity
+                let top = std.math.to_int(p.len()) - 1
+                if negation:
+                    intensity[top] = 1.0 / intensity.get(top).unwrap()
+                    negated[top] = True
+                has_modifier = False
+                negation = False
+                if e.adverb:
+                    has_modifier = True
+                    modifier = w
+                if NEGATIONS.contains(w):
+                    negation = True
+            case None:
+                if NEGATIONS.contains(w):
+                    negation = True
+                elif negation and size(strip_quotes(w)) > 1:
+                    negation = False
+                if negation and has_modifier and modifier.ends_with("ly"):
+                    negated[std.math.to_int(p.len()) - 1] = True
+                    negation = False
+                elif has_modifier and size(w) > 2:
+                    has_modifier = False
+                if w == "!" and not p.is_empty():
+                    let top = std.math.to_int(p.len()) - 1
+                    p[top] = clamp(p.get(top).unwrap() * 1.25)
+                if w == "(!)":
+                    p.push(0.0)
+                    intensity.push(1.0)
+                    negated.push(False)
+                if not is_alpha(w) and size(w) <= 5 and not PUNCTUATION.contains(w):
+                    match emoticon_score(w):
+                        case Some(score):
+                            p.push(score)
+                            intensity.push(1.0)
+                            negated.push(False)
+                        case None:
+                            pass
+    if p.is_empty():
+        return 0.0
+    var s = 0.0
+    var k = 0
+    for x in p:
+        s = s + (x * -0.5 if negated.get(k).unwrap() else x)
+        k = k + 1
+    s / std.math.to_float(p.len())

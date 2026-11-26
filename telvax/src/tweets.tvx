@@ -1,0 +1,15 @@
+# The columns of data/covid19_tweets.csv (written by `telvax schema`).
+type Tweet:
+    user_name: Text
+    user_location: Text?
+    user_description: Text?
+    user_created: Timestamp
+    user_followers: Int
+    user_friends: Int
+    user_favourites: Int
+    user_verified: Bool
+    date: Timestamp
+    text: Text
+    hashtags: Text?
+    source: Text?
+    is_retweet: Bool

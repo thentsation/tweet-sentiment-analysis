@@ -94,6 +94,35 @@ Or via Compose: `docker compose up --build`.
 
 In CI the image is scanned with **Trivy** (CRITICAL/HIGH fail the build) and pushed to **GHCR** with version, `latest` and SHA tags on `main`/releases.
 
+## Telvax version
+
+`telvax/` has the pipeline written in [Telvax](https://github.com/telvax/telvax). It covers loading, cleaning (`clean_tweet`
+and `preprocess_text`, with NLTK's English stop words), TextBlob polarity and NLTK's VADER, the agreement of their
+labels, the daily timeline, the two figures (as SVG) and `reports/metrics.json` with the same keys.
+
+```sh
+cd telvax
+tvpm run main --input ../data/covid19_tweets.csv --output ../reports              # all 179,108 tweets
+tvpm run main --input ../data/covid19_tweets.csv --output ../reports --sample 5000
+tvpm run main --help
+```
+
+The options are those of `src/main.py`: `--input`, `--output`, `--text-column`, `--sample`, `--num-topics`,
+`--num-words`, `--tune-topics`, `--seed`. Three differences:
+* A sample is drawn with the seed by Telvax's generator, so it has other tweets than pandas' `sample`.
+* The figures are SVG.
+* The classifier, the benchmark, the topics and the word clouds wait for the models of the `learn` package of Telvax
+  (`telvax/learn`), so `accuracy`, `confusion_matrix`, `labels`, `classification_report` and `topic_coherence` are
+  `null` and `model_benchmark` and `topics` are empty.
+
+The numbers are checked against the Python code on the same tweets:
+* the cleaned texts, the TextBlob polarity and the VADER compound of every tweet;
+* `tweets_analyzed`, `label_agreement` and `sentiment_timeline` of `metrics.json`.
+
+VADER is ported from NLTK 3.10.4, which `src/sentiment.py` uses, not from the `vaderSentiment` package: the two give
+different scores for about 5% of the tweets. `src/*_test.tvx` are the tests (`telvax test src/sentiment_test.tvx`), and
+`.github/workflows/telvax.yml` runs them.
+
 ## Repository structure
 
 ```

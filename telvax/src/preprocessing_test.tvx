@@ -1,0 +1,14 @@
+from preprocessing import clean_tweet, preprocess_text
+
+fn test_clean_tweet_takes_out_links_mentions_and_retweets():
+    assert_eq(clean_tweet("RT @who: masks #COVID19 work https://t.co/x  www.a.org now"), ": masks COVID19 work now")
+    assert_eq(clean_tweet("rt:hello"), "hello")
+    assert_eq(clean_tweet("RTX is a card"), "RTX is a card")
+    assert_eq(clean_tweet("Rt-done"), "-done")
+
+fn test_a_hashtag_before_an_emoji_keeps_python_word_characters():
+    # U+FE0F after the heart is a mark: not a word character for Python, so it stays.
+    assert_eq(clean_tweet("#love❤️ it"), "love❤️ it")
+
+fn test_preprocess_text_drops_stop_words_in_lower_case():
+    assert_eq(preprocess_text("The Vaccine is NOT here yet #COVID"), "vaccine yet covid")

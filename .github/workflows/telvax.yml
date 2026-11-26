@@ -1,0 +1,35 @@
+name: Telvax
+
+# The Telvax version of the pipeline (telvax/): check, format, tests, and a run on a sample.
+on:
+  pull_request:
+    paths: ["telvax/**", ".github/workflows/telvax.yml"]
+  push:
+    branches: [main, feat/telvax]
+    paths: ["telvax/**", ".github/workflows/telvax.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: telvax
+    steps:
+      - uses: actions/checkout@v7
+      # std.plot, std.ml and the flags of `telvax run` are in the `develop` branch of Telvax and not yet in a release.
+      # Once a release has them, this becomes the install script of Telvax.
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - name: Telvax from develop
+        run: cargo install --locked --git https://github.com/telvax/telvax --branch develop telvax_cli telvax_pkg
+      - name: Check, format and tests
+        run: |
+          for f in src/*.tvx; do telvax check "$f"; telvax fmt --check "$f"; done
+          for f in src/*_test.tvx; do telvax test "$f"; done
+      - name: A run on a sample
+        run: |
+          tvpm run main --input ../data/covid19_tweets.csv --output ../reports --sample 2000
+          python3 -c "import json; m = json.load(open('../reports/metrics.json')); assert m['tweets_analyzed'] > 1900, m"

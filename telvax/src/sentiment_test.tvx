@@ -1,0 +1,30 @@
+from textblob import polarity, find_tokens
+from vader import compound
+from sentiment import label_from_polarity, label_from_vader_compound, label_agreement
+
+# Values of Python's TextBlob 0.20.1 and NLTK 3.10.4 for the same texts.
+fn test_textblob_polarity():
+    assert(std.math.abs(polarity("This is a very good day") - 0.9099999999999999) < 1.0e-12)
+    assert(std.math.abs(polarity("not good at all") - -0.35) < 1.0e-12)
+    assert(std.math.abs(polarity("Great!!! :)") - 0.75) < 1.0e-12)
+    assert_eq(polarity("the cat sat"), 0.0)
+
+fn test_pattern_tokens():
+    assert_eq(find_tokens("Hello, world... it's Mr. Smith :) ok"), ["Hello , world ...", "it ' s Mr. Smith :) ok"])
+
+fn test_vader_compound():
+    assert_eq(compound("This is a very good day"), 0.4927)
+    assert_eq(compound("not good at all!"), -0.4015)
+    assert_eq(compound("VERY BAD news, but we will be fine"), -0.2334)
+    assert_eq(compound(""), 0.0)
+
+fn test_labels_and_agreement():
+    assert_eq(label_from_polarity(0.1), "positive")
+    assert_eq(label_from_polarity(0.0), "neutral")
+    assert_eq(label_from_vader_compound(0.05), "positive")
+    assert_eq(label_from_vader_compound(-0.049), "neutral")
+    let a = label_agreement(["positive", "negative", "positive", "neutral"], ["positive", "positive", "positive", "neutral"]).unwrap()
+    assert_eq(a.overall, 0.75)
+    assert_eq(a.by_label.get("negative"), Some(0.0))
+    assert_eq(a.by_label.get("positive"), Some(1.0))
+    assert(label_agreement(["a"], []).is_err())
